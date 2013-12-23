@@ -1,6 +1,14 @@
 %%-*- mode: erlang -*-
-%%% Things that need to be in vm.args, but never tuned
 
+%% Cuttlefish handles the processing of vm.args differently than all
+%% other Erlang namepaces. Things that need to be set in vm.args but
+%% never changed (e.g. -smp enable) are, in theory, configurable by
+%% the end user even though we don't want them to be. We can get
+%% around this problem by providing only a single instance of a
+%% datatype, but that should happen in a product specific schema. This
+%% file should describe the possible options for an erlang VM.
+
+%% Things that need to be in vm.args, but never tuned @doc
 {mapping, "erlang.smp", "vm_args.-smp", [
   {default, "enable"},
   {level, advanced}
