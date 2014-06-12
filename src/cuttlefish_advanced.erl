@@ -37,15 +37,30 @@ overlay(GeneratedConfig, AdvancedConfig) ->
             GeneratedApplicationConfig = proplists:get_value(ApplicationName, GeneratedConfig, []),
             Updated = lists:foldl(
                 fun({ConfigElementName, ConfigElement}, Acc) ->
-                    cuttlefish_util:replace_proplist_value(ConfigElementName, ConfigElement, Acc)
+                    overlay_property(ConfigElementName, ConfigElement, Acc)
+
                 end,
                 GeneratedApplicationConfig,
                 ApplicationConfig),
-            cuttlefish_util:replace_proplist_value(ApplicationName, Updated, OuterAcc)
+            overlay_property(ApplicationName, Updated, OuterAcc)
         end,
         GeneratedConfig,
         AdvancedConfig).
 
+%% @doc overlay a property
+-spec overlay_property(atom() | string(), any(), [{string(), any()}]) -> [{string(), any()}].
+overlay_property(Key, [E] = Value, Proplist) when is_list(Value) andalso is_tuple(E) -> 
+    case lists:keyfind(Key, 1, Proplist) of 
+        false ->
+            lists:keystore(Key, 1, Proplist, {Key, Value});
+        {_, SubPropvals} ->
+            {ReplaceKey, _ReplaceVal} = E,
+            NewSubValue = lists:keyreplace(ReplaceKey, 1, SubPropvals, E),
+            NewConfig = {Key, NewSubValue},
+	    lists:keyreplace(Key, 1, Proplist, NewConfig)
+    end;
+overlay_property(Key, Value, Proplist) ->
+    lists:keystore(Key, 1, Proplist, {Key, Value}).
 
 -ifdef(TEST).
 
@@ -53,22 +68,30 @@ overlay_test() ->
     GeneratedConfig = [
         {app1, [{'setting1.1', "value1.1"}]},
         {app2, [{'setting2.1', "value2.1"}]},
-        {app3, [{'setting3.1', [{"blah", "blah"}, {"blarg", "blarg"}]}]}
+        {app3, [{'setting3.1', [{"blah", "blah"}, {"blarg", "blarg"}]}]},
+%        {app6, [{'setting6.1', [{'setting6.2', [{"manray", "monkey"}, {"picadillo", "porkpie"}]}]}]}
+        {app6, [{'setting6.1', [{'setting6.2', [{"manray", "monkey"}]}]}]}
+
     ],
 
     AdvancedConfig = [
-        {app3, [{'setting3.1', i_dont_care}]},
-        {app4, [{'some_unschemad_thing', 'like_a_penguin'}]}
+        {app3, [{'setting3.1', [{"blarg", "blorg"}]}]},
+        {app4, [{'setting4.1', i_dont_care}]},
+        {app5, [{'some_unschemad_thing', 'like_a_penguin'}]},
+        {app6, [{'setting6.1', [{'setting6.2', [{"manray", "moonstone"}]}]}]}
     ],
 
     Expected = [
         {app1, [{'setting1.1', "value1.1"}]},
         {app2, [{'setting2.1', "value2.1"}]},
-        {app3, [{'setting3.1', i_dont_care}]},
-        {app4, [{'some_unschemad_thing', 'like_a_penguin'}]}
+        {app3, [{'setting3.1',  [{"blah", "blah"}, {"blarg", "blorg"}]}]},
+        {app6, [{'setting6.1', [{'setting6.2', [{"manray", "moonstone"}]}]}]},
+%        {app6, [{'setting6.1', [{'setting6.2', [{"manray", "moonstone"}, {"picadillo", "porkpie"}]}]}]}
+        {app4, [{'setting4.1', i_dont_care}]},
+        {app5, [{'some_unschemad_thing', 'like_a_penguin'}]}
     ],
-    NewConfig = overlay(GeneratedConfig, AdvancedConfig),
 
+    NewConfig = overlay(GeneratedConfig, AdvancedConfig),
     ?assertEqual(Expected, NewConfig),
 
     ok.
