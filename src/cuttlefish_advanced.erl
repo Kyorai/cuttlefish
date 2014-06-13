@@ -32,36 +32,30 @@
 %% @doc this function overlays the values in proplist 'AdvancedConfig'
 %% on top of 'GeneratedConfig'
 overlay(GeneratedConfig, AdvancedConfig) ->
-    lists:foldl(
-        fun({ApplicationName, ApplicationConfig}, OuterAcc) ->
-            GeneratedApplicationConfig = proplists:get_value(ApplicationName, GeneratedConfig, []),
-            Updated = lists:foldl(
-                fun({ConfigElementName, ConfigElement}, Acc) ->
-                    overlay_property(ConfigElementName, ConfigElement, Acc)
+    orddict:merge(fun(Key,Proplist,Overlay) -> 
+                      overlay_property(Key, Overlay, Proplist) 
+                  end, 
+                  orddict:from_list(GeneratedConfig), orddict:from_list(AdvancedConfig)).
 
-                end,
-                GeneratedApplicationConfig,
-                ApplicationConfig),
-            overlay_property(ApplicationName, Updated, OuterAcc)
-        end,
-        GeneratedConfig,
-        AdvancedConfig).
-
-%% @doc overlay a property
--spec overlay_property(atom() | string(), any(), [{string(), any()}]) -> [{string(), any()}].
-overlay_property(Key, [E] = Value, Proplist) when is_list(Value) andalso is_tuple(E) -> 
-    case lists:keyfind(Key, 1, Proplist) of 
-        false ->
-            lists:keystore(Key, 1, Proplist, {Key, Value});
-        {_, SubPropvals} ->
-            {ReplaceKey, _ReplaceVal} = E,
-            NewSubValue = lists:keyreplace(ReplaceKey, 1, SubPropvals, E),
-            NewConfig = {Key, NewSubValue},
-	    lists:keyreplace(Key, 1, Proplist, NewConfig)
+overlay_property(_, [E] = Value, Proplist) when is_list(Value) andalso is_tuple(E) -> 
+    {SearchKey, SearchVal} = E,    
+    case is_list(SearchVal) andalso is_tuple(hd(SearchVal)) of 
+        true ->
+            case proplists:get_value(SearchKey, Proplist) of 
+                undefined ->
+                    Proplist;
+                NextProplist ->
+                    R = overlay_property(SearchKey, SearchVal, NextProplist),
+                    [{SearchKey, R}]
+            end;
+	false ->
+	    lists:keystore(SearchKey, 1, Proplist, E)
     end;
-overlay_property(Key, Value, Proplist) ->
-    lists:keystore(Key, 1, Proplist, {Key, Value}).
-
+overlay_property(Key, Value, []) -> 
+    [{Key, Value}];
+overlay_property(Key, Value, Proplist) -> 
+    lists:keystore(Key, 1, Value, Proplist).
+   
 -ifdef(TEST).
 
 overlay_test() ->
@@ -69,8 +63,8 @@ overlay_test() ->
         {app1, [{'setting1.1', "value1.1"}]},
         {app2, [{'setting2.1', "value2.1"}]},
         {app3, [{'setting3.1', [{"blah", "blah"}, {"blarg", "blarg"}]}]},
-%        {app6, [{'setting6.1', [{'setting6.2', [{"manray", "monkey"}, {"picadillo", "porkpie"}]}]}]}
-        {app6, [{'setting6.1', [{'setting6.2', [{"manray", "monkey"}]}]}]}
+        {app6, [{'setting6.1', [{'setting6.2', [{"manray", "monkey"}, {"picadillo", "porkpie"}]}]}]},
+        {app7, [{'setting7.1', [{'setting7.2', [{"manray", "monkey"}, {"picadillo", "porkpie"}]}]}]}
 
     ],
 
@@ -78,20 +72,24 @@ overlay_test() ->
         {app3, [{'setting3.1', [{"blarg", "blorg"}]}]},
         {app4, [{'setting4.1', i_dont_care}]},
         {app5, [{'some_unschemad_thing', 'like_a_penguin'}]},
-        {app6, [{'setting6.1', [{'setting6.2', [{"manray", "moonstone"}]}]}]}
+        {app6, [{'setting6.1', [{'setting6.2', [{"manray", "moonstone"}]}]}]},
+        {app7, [{'setting7.1', [{'setting7.2', [{"picadillo", "pizzapie"}]}]}]}
+
     ],
 
     Expected = [
         {app1, [{'setting1.1', "value1.1"}]},
         {app2, [{'setting2.1', "value2.1"}]},
         {app3, [{'setting3.1',  [{"blah", "blah"}, {"blarg", "blorg"}]}]},
-        {app6, [{'setting6.1', [{'setting6.2', [{"manray", "moonstone"}]}]}]},
-%        {app6, [{'setting6.1', [{'setting6.2', [{"manray", "moonstone"}, {"picadillo", "porkpie"}]}]}]}
         {app4, [{'setting4.1', i_dont_care}]},
-        {app5, [{'some_unschemad_thing', 'like_a_penguin'}]}
+        {app5, [{'some_unschemad_thing', 'like_a_penguin'}]},
+        {app6, [{'setting6.1', [{'setting6.2', [{"manray", "moonstone"}, {"picadillo", "porkpie"}]}]}]},
+        {app7, [{'setting7.1', [{'setting7.2', [{"manray", "monkey"}, {"picadillo", "pizzapie"}]}]}]}
+
     ],
 
     NewConfig = overlay(GeneratedConfig, AdvancedConfig),
+    %?debugFmt("NewConfig:~p, Expected:~p", [NewConfig, Expected]),
     ?assertEqual(Expected, NewConfig),
 
     ok.
