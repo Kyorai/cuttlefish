@@ -21,8 +21,8 @@
 %% -------------------------------------------------------------------
 -module(cuttlefish_error).
 
--type error() :: {error, string()|[string()]}.
--type errorlist() :: {error, [error()]}.
+-type error() :: {'error', {atom(), term()}}.
+-type errorlist() :: {'errorlist', [error()]}.
 -export_type([error/0, errorlist/0]).
 
 -export([
@@ -33,13 +33,108 @@
         print/1,
         print/2,
         format/1,
-        format/2
+        format/2,
+        xlate/1
 ]).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -compile(export_all).
 -endif.
+
+%% We'll be calling this a lot from `xlate'
+-define(STR(X, Y), xlate(cuttlefish_datatypes:to_string(X, Y))).
+
+-spec xlate({atom(), term()}|string()) -> iolist().
+xlate(Message) when is_list(Message) ->
+    %% We allow for strings so that we can safely call
+    %% `cuttlefish_datatypes:to_string` when creating these messages
+    Message;
+xlate({error, Details}) ->
+    xlate(Details);
+xlate({_Error, {error, NestedError}}) ->
+    xlate(NestedError);
+xlate({type, {Value, Type}}) ->
+    io_lib:format("Tried to convert ~p but invalid datatype: ~p",
+                  [Value, Type]);
+xlate({range, {{Value, Type}, Range}}) ->
+    [?STR(Value, Type), " can't be outside the range ", Range];
+xlate({conversion, {Value, Type}}) ->
+    io_lib:format("~p cannot be converted to a(n) ~s", [Value, Type]);
+xlate({duration, Value}) ->
+    io_lib:format("Invalid duration value: ~ts", [Value]);
+xlate({enum_name, {Value, EnumNames}}) ->
+    io_lib:format("~p is not a valid enum value, acceptable values are: ~ts",
+                  [Value, string:join(EnumNames, ", ")]);
+xlate({enum_format, Value}) ->
+    %% This collapses two different type of formatting errors into one
+    %% error message
+    io_lib:format("Enum elements must be atoms, strings, or 2-tuples with "
+                  "atom or string as first element. Bad value: ~w", [Value]);
+xlate({mapping_types, List}) ->
+    io_lib:format("Invalid datatype list for mapping: ~ts",
+                  [string:join(List, ", ")]);
+xlate({mapping_parse, Term}) ->
+    io_lib:format(
+        "Poorly formatted input to cuttlefish_mapping:parse/1 : ~p",
+        [Term]
+     );
+xlate({translation_parse, Term}) ->
+    io_lib:format(
+      "Poorly formatted input to cuttlefish_translation:parse/1 : ~p",
+      [Term]
+     );
+xlate({validator_parse, Term}) ->
+    io_lib:format(
+      "Poorly formatted input to cuttlefish_validator:parse/1 : ~p",
+      [Term]
+     );
+xlate({conf_to_latin1, LineNum}) ->
+    io_lib:format("Error converting value on line #~p to latin1", [LineNum]);
+xlate({file_open, {File, Reason}}) ->
+    io_lib:format("Could not open file (~s) for Reason ~s", [File, Reason]);
+xlate({conf_syntax, {File, {Line, Col}}}) ->
+    io_lib:format("Syntax error in ~s after line ~p column ~p, "
+                  "parsing incomplete", [File, Line, Col]);
+xlate({error_in_file, {File, Error}}) ->
+    [File, ": ", xlate(Error)];
+xlate({translation_missing_setting, {Translation, Setting}}) ->
+    io_lib:format("Translation for '~s' expected to find setting '~s' but was missing",
+                  [Translation, Setting]);
+xlate({translation_invalid_configuration, {Translation, Invalid}}) ->
+    io_lib:format("Translation for '~s' found invalid configuration: ~s",
+                  [Translation, Invalid]);
+xlate({translation_unknown_error, {Translation, {Class, Error}}}) ->
+    io_lib:format("Error running translation for ~s, [~p, ~p]",
+                  [Translation, Class, Error]);
+xlate({translation_arity, {Translation, Arity}}) ->
+    io_lib:format("~p is not a valid arity for translation fun() ~s."
+                  " Try 1 or 2", [Arity, Translation]);
+xlate({map_multiple_match, VariableDefinition}) ->
+    io_lib:format("~p has both a fuzzy and strict match", [VariableDefinition]);
+xlate({unknown_variable, Variable}) ->
+    ["Conf file attempted to set unknown variable: ", Variable];
+xlate({unsupported_type, Type}) ->
+    io_lib:format("~p is not a supported datatype", [Type]);
+xlate({transform_type, Type}) ->
+    ["Error transforming datatype for: ", Type];
+xlate({transform_type_exception, {Type, {Class, Error}}}) ->
+    io_lib:format("Caught exception converting to ~p: ~p:~p",
+                  [Type, Class, Error]);
+xlate({transform_type_unacceptable, {Value, BadValue}}) ->
+    io_lib:format("~p is not accepted value: ~p", [Value, BadValue]);
+xlate({circular_rhs, History}) ->
+    io_lib:format("Circular RHS substitutions: ~p", [History]);
+xlate({substitution_missing_config, {Substitution, Variable}}) ->
+    io_lib:format("'~s' substitution requires a config variable '~s' to be set",
+                  [Substitution, Variable]);
+xlate({mapping_not_found, Variable}) ->
+    [Variable, " not_found"];
+xlate({mapping_multiple, {Variable, {Hard, Fuzzy}}}) ->
+    io_lib:format("~p hard mappings and ~p fuzzy mappings found "
+                  "for ~s", [Hard, Fuzzy, Variable]);
+xlate({validation, {Variable, Description}}) ->
+    [Variable, " invalid, ", Description].
 
 -spec contains_error(list()) -> boolean().
 contains_error(List) ->
@@ -51,12 +146,12 @@ is_error(_) -> false.
 
 -spec filter(list()) -> errorlist().
 filter(List) ->
-    {error, lists:filter(fun is_error/1, List)}.
+    {errorlist, lists:filter(fun is_error/1, List)}.
 
 -spec errorlist_maybe(any()) -> any().
 errorlist_maybe(List) when is_list(List) ->
     case filter(List) of
-        {error, []} ->
+        {errorlist, []} ->
             List;
         Errorlist ->
             Errorlist
@@ -68,8 +163,8 @@ print(FormatString, Args) ->
     print(io_lib:format(FormatString, Args)).
 
 -spec print(string() | error()) -> ok.
-print({error, List}) ->
-    print(lists:flatten(List));
+print({error, ErrorTerm}) ->
+    print(lists:flatten(xlate(ErrorTerm)));
 print(String) ->
     case lager:error("~s", [String]) of
         {error, lager_not_running} ->
@@ -83,6 +178,7 @@ format(Str) -> format(Str, []).
 
 -spec format(io:format(), list()) -> error().
 format(Str, List) ->
+    %% XXX: Check this
     {error, lists:flatten(io_lib:format(Str, List))}.
 
 -ifdef(TEST).

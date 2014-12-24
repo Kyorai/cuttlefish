@@ -52,20 +52,28 @@ to_string(Bytez) ->
 %% @doc the reverse of to_string/1. turns "1kb" or "1KB" into 1024.
 -spec parse(string()) -> integer()|error.
 parse(String) ->
-    try
-        case lists:reverse(String) of
-            [$B,$K|BSize] -> cuttlefish_util:numerify(lists:reverse(BSize)) * ?KILOBYTE;
-            [$b,$k|BSize] -> cuttlefish_util:numerify(lists:reverse(BSize)) * ?KILOBYTE;
-            [$B,$M|BSize] -> cuttlefish_util:numerify(lists:reverse(BSize)) * ?MEGABYTE;
-            [$b,$m|BSize] -> cuttlefish_util:numerify(lists:reverse(BSize)) * ?MEGABYTE;
-            [$B,$G|BSize] -> cuttlefish_util:numerify(lists:reverse(BSize)) * ?GIGABYTE;
-            [$b,$g|BSize] -> cuttlefish_util:numerify(lists:reverse(BSize)) * ?GIGABYTE;
-            BSize -> cuttlefish_util:numerify(lists:reverse(BSize))
-        end of
-        Size -> Size
+    try lists:reverse(String) of
+        [$B,$K|BSize] -> numerify(lists:reverse(BSize)) * ?KILOBYTE;
+        [$b,$k|BSize] -> numerify(lists:reverse(BSize)) * ?KILOBYTE;
+        [$B,$M|BSize] -> numerify(lists:reverse(BSize)) * ?MEGABYTE;
+        [$b,$m|BSize] -> numerify(lists:reverse(BSize)) * ?MEGABYTE;
+        [$B,$G|BSize] -> numerify(lists:reverse(BSize)) * ?GIGABYTE;
+        [$b,$g|BSize] -> numerify(lists:reverse(BSize)) * ?GIGABYTE;
+        BSize -> numerify(lists:reverse(BSize))
     catch
         _:_ -> error
     end.
+
+-spec numerify(string()) -> integer()|float().
+numerify([$.|_]=Num) -> numerify([$0|Num]);
+numerify(String) ->
+    try list_to_float(String) of
+        Float -> Float
+    catch
+        _:_ ->
+            list_to_integer(String)
+    end.
+
 
 
 -ifdef(TEST).

@@ -28,7 +28,6 @@
 
 -export([
     replace_proplist_value/3,
-    numerify/1,
     ceiling/1,
     levenshtein/2]).
 
@@ -71,22 +70,6 @@ fuzzy_variable_match(Var, VarDef) ->
 -spec replace_proplist_value(atom() | string(), any(), [{string(), any()}]) -> [{string(), any()}].
 replace_proplist_value(Key, Value, Proplist) ->
     lists:keystore(Key, 1, Proplist, {Key, Value}).
-
-%% @doc turn a string into a number in a way I am happy with
--spec numerify(string()) -> integer()|float()|{error, string()}.
-numerify([$.|_]=Num) -> numerify([$0|Num]);
-numerify(String) ->
-    try list_to_float(String) of
-        Float -> Float
-    catch
-        _:_ ->
-            try list_to_integer(String) of
-                Int -> Int
-            catch
-                _:_ ->
-                    {error, String}
-            end
-    end.
 
 %% @doc remember when you learned about decimal places. about a minute
 %% later, you learned about rounding up and down. This is rounding up.
