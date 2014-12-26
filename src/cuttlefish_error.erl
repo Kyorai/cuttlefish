@@ -206,8 +206,8 @@ contains_error_test() ->
     ok.
 
 filter_test() ->
-    ?assertEqual({error, []}, filter(["hi", "what even is an error?", "bye"])),
-    ?assertEqual({error, [{error, "etoomanythings"}]},
+    ?assertEqual({errorlist, []}, filter(["hi", "what even is an error?", "bye"])),
+    ?assertEqual({errorlist, [{error, "etoomanythings"}]},
                  filter(["hi", {error, "etoomanythings"}, "bye"])),
     ok.
 
@@ -218,7 +218,7 @@ errorlist_maybe_test() ->
     ?assertEqual("string", errorlist_maybe("string")),
 
     ?assertEqual(
-       {error, [{error, "etoomanythings"}]},
+       {errorlist, [{error, "etoomanythings"}]},
        errorlist_maybe(["hi", {error, "etoomanythings"}, "bye"])),
     ?assertEqual(
        ["hi", "what even is an error?", "bye"],

@@ -112,7 +112,7 @@ map_validate(Schema, Conf) ->
     %% Any more advanced validators
     lager:debug("Validation"),
     case cuttlefish_error:errorlist_maybe(run_validations(Schema, Conf)) of
-        {error, EList} ->
+        {errorlist, EList} ->
             {error, validation, {errorlist, EList}};
         true ->
             {DirectMappings, TranslationsToDrop} = apply_mappings(Schema, Conf),
