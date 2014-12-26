@@ -359,7 +359,7 @@ from_string_ip_test() ->
     ok.
 
 from_string_enum_test() ->
-    ?assertEqual("\"a\" is not a valid enum value, acceptable values are [\"b\",\"c\"].", ?XLATE(from_string(a, {enum, [b, c]}))),
+    ?assertEqual("\"a\" is not a valid enum value, acceptable values are: b, c", ?XLATE(from_string(a, {enum, [b, c]}))),
     ?assertEqual(true, from_string("true", {enum, [true, false]})),
     ?assertEqual(true, from_string(true, {enum, [true, false]})).
 
