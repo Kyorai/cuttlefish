@@ -416,14 +416,15 @@ transform_datatypes(Conf, Mappings) ->
                 MappingRecord ->
                     DTs = cuttlefish_mapping:datatype(MappingRecord),
 
-                    %% DTs is a list now!
+                    %% DTs is a list now, which means we'll receive an
+                    %% errorlist, not a single error
                     case transform_type(DTs, Value) of
                         {ok, NewValue} ->
                             {[{Variable, NewValue}|Acc], ErrorAcc};
-                        {error, ErrorTerm} ->
+                        {errorlist, EList} ->
                             NewError = {transform_type,
                                         cuttlefish_variable:format(Variable)},
-                            {Acc, [{error, NewError}, {error, ErrorTerm}] ++ ErrorAcc}
+                            {Acc, [{error, NewError}] ++ EList ++ ErrorAcc}
                     end
             end
         end,
@@ -505,8 +506,10 @@ head_sub(Value) ->
             end
     end.
 
+%% If transform_type takes a list as first argument, foldm_either will
+%% give us back an errorlist for a single error
 -spec transform_type(cuttlefish_datatypes:datatype_list() | cuttlefish_datatypes:datatype(), term()) ->
-                            {ok, term()} | cuttlefish_error:error().
+                            {ok, term()} | cuttlefish_error:error() | cuttlefish_error:errorlist().
 transform_type(DTs, Value) when is_list(DTs) ->
     foldm_either(fun(DT) -> transform_type(DT, Value) end, DTs);
 
@@ -617,7 +620,7 @@ foldm_either(Fun, List) ->
 
 %% @doc Calls Fun on each element of the list until it returns {ok,
 %% term()}, otherwise accumulates {error, term()} into a list,
-%% wrapping in {error, _} at the end.
+%% wrapping in {errorlist, _} at the end.
 -spec foldm_either(fun((term()) ->
                            {ok, term()}  | cuttlefish_error:error()),
                    list(), list()) ->
