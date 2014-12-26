@@ -73,9 +73,9 @@ file(Filename) ->
             %% Conf is a proplist, check if any of the values are cuttlefish_errors
             {_, Values} = lists:unzip(Conf),
             case cuttlefish_error:filter(Values) of
-                {error, []} ->
+                {errorlist, []} ->
                     remove_duplicates(Conf);
-                {error, ErrorList} ->
+                {errorlist, ErrorList} ->
                     NewErrorList = [ {error_in_file, {Filename, E}} || {error, E} <- ErrorList ],
                     {errorlist, NewErrorList}
             end
