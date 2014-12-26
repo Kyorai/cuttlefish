@@ -279,6 +279,8 @@ percent_stripper_r(Line) ->
             lists:reverse(Line))).
 -ifdef(TEST).
 
+-define(XLATE(X), lists:flatten(cuttlefish_error:xlate(X))).
+
 %% Test helpers
 -spec file(string()) -> schema() | cuttlefish_error:errorlist().
 file(Filename) ->
@@ -483,12 +485,12 @@ strings_filtration_test() ->
 error_test() ->
     {ErrorAtom, Errors} = strings(["tyktorp"]),
     io:format("~p", [Errors]),
-    ?assertEqual(error, ErrorAtom),
+    ?assertEqual(errorlist, ErrorAtom),
 
-    {error, [{error, Error}]} = strings(["{mapping, \"a\", [{datatype, unsupported_datatype}]}."]),
+    {errorlist, [{error, Error}]} = strings(["{mapping, \"a\", [{datatype, unsupported_datatype}]}."]),
     ?assertEqual(
         "Unknown parse return: {mapping,\n                          {mapping,\"a\",[{datatype,unsupported_datatype}]}}",
-        Error),
+        ?XLATE(Error)),
     ok.
 
 merge_across_multiple_schemas_test() ->
