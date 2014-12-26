@@ -134,7 +134,19 @@ xlate({mapping_multiple, {Variable, {Hard, Fuzzy}}}) ->
     io_lib:format("~p hard mappings and ~p fuzzy mappings found "
                   "for ~s", [Hard, Fuzzy, Variable]);
 xlate({validation, {Variable, Description}}) ->
-    [Variable, " invalid, ", Description].
+    [Variable, " invalid, ", Description];
+xlate({erl_parse, {Reason, LineNo}}) ->
+    ["Schema parse error near line number ", integer_to_list(LineNo),
+     ": ", Reason];
+xlate({erl_parse, Reason}) ->
+    io_lib:format("Schema parse error: ~p", [Reason]);
+xlate({erl_parse_unexpected, Error}) ->
+    io_lib:format("Unexpected return from erl_parse:parse_exprs/1: ~p",
+                  [Error]);
+xlate({parse_schema, Value}) ->
+    io_lib:format("Unknown parse return: ~p", [Value]);
+xlate({erl_scan, LineNo}) ->
+    ["Error scanning erlang near line ", integer_to_list(LineNo)].
 
 -spec contains_error(list()) -> boolean().
 contains_error(List) ->
