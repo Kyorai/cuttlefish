@@ -119,18 +119,23 @@ assert_errors(Config, Phase, [H|_]=Messages) when is_list(H) ->
     [ assert_error_message(Config, Message) || Message <- Messages ].
 
 %% @doc Asserts that the generated configuration is in error and
-%% contains the given error message.
+%% contains an error tuple that translates to the given error message
 assert_error_message(Config, Message) ->
     ok = assert_error(Config),
-    {errorlist, Messages} = element(3, Config),
-    case lists:member({error, Message}, Messages) of
-        true -> ok;
-        false ->
-            erlang:exit({assert_error_message_failed,
-                         [{expected, Message},
-                          {actual, Messages}]})
-    end.
+    {errorlist, Errors} = element(3, Config),
+    chase_message(Message, Errors, Errors).
 
+chase_message(Message, [], Errors) ->
+    erlang:exit({assert_error_message_failed,
+                 [{expected, Message},
+                  {actual, Errors}]});
+chase_message(Message, [{error, ErrorTerm}|T], Errors) ->
+    case lists:flatten(cuttlefish_error:xlate(ErrorTerm)) of
+        Message ->
+            ok;
+        _ ->
+            chase_message(Message, T, Errors)
+    end.
 
 -spec path(cuttlefish_variable:variable(),
            [{ string() | atom() | binary() , term()}]) ->
