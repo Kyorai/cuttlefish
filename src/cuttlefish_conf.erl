@@ -76,7 +76,7 @@ file(Filename) ->
                 {errorlist, []} ->
                     remove_duplicates(Conf);
                 {errorlist, ErrorList} ->
-                    NewErrorList = [ {error_in_file, {Filename, E}} || {error, E} <- ErrorList ],
+                    NewErrorList = [ {error, {in_file, {Filename, E}}} || {error, E} <- ErrorList ],
                     {errorlist, NewErrorList}
             end
     end.

@@ -96,7 +96,7 @@ xlate({file_open, {File, Reason}}) ->
 xlate({conf_syntax, {File, {Line, Col}}}) ->
     io_lib:format("Syntax error in ~s after line ~p column ~p, "
                   "parsing incomplete", [File, Line, Col]);
-xlate({error_in_file, {File, Error}}) ->
+xlate({in_file, {File, Error}}) ->
     [File, ": ", xlate(Error)];
 xlate({translation_missing_setting, {Translation, Setting}}) ->
     io_lib:format("Translation for '~s' expected to find setting '~s' but was missing",
