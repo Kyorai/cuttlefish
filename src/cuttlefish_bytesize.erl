@@ -63,7 +63,7 @@ parse(String) ->
     end.
 
 -spec bmult(number()|cuttlefish_error:error(), integer()) ->
-                   cuttlefish_error:error()|number().
+                   number()|cuttlefish_error:error().
 bmult({error, _ErrorTerm}=Error, _Mult) ->
     Error;
 bmult(Quantity, Multiplier) ->

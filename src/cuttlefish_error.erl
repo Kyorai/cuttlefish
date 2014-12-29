@@ -32,8 +32,6 @@
         errorlist_maybe/1,
         print/1,
         print/2,
-        format/1,
-        format/2,
         xlate/1
 ]).
 
@@ -187,14 +185,6 @@ print(String) ->
         ok -> ok
     end.
 
--spec format(io:format()) -> error().
-format(Str) -> format(Str, []).
-
--spec format(io:format(), list()) -> error().
-format(Str, List) ->
-    %% XXX: Check this
-    {error, lists:flatten(io_lib:format(Str, List))}.
-
 -ifdef(TEST).
 
 is_error_test() ->
@@ -225,11 +215,6 @@ errorlist_maybe_test() ->
     ?assertEqual(
        ["hi", "what even is an error?", "bye"],
        errorlist_maybe(["hi", "what even is an error?", "bye"])),
-    ok.
-
-format_test() ->
-    ?assertEqual({error, "Hi!"}, format("Hi!")),
-    ?assertEqual({error, "Error: 17"}, format("Error: ~p", [17])),
     ok.
 
 -endif.
