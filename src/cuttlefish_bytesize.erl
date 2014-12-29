@@ -69,7 +69,7 @@ bmult({error, _ErrorTerm}=Error, _Mult) ->
 bmult(Quantity, Multiplier) ->
     Quantity * Multiplier.
 
--spec numerify(string()) -> integer()|float().
+-spec numerify(string()) -> integer()|float()|cuttlefish_error:error().
 numerify([$.|_]=Num) -> numerify([$0|Num]);
 numerify(String) ->
     try list_to_float(String) of
