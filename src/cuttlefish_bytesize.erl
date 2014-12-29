@@ -53,13 +53,13 @@ to_string(Bytez) ->
 -spec parse(string()) -> integer()|cuttlefish_error:error().
 parse(String) ->
     case lists:reverse(String) of
-        [$B,$K|BSize] -> bmult(numerify(lists:reverse(BSize)), ?KILOBYTE);
-        [$b,$k|BSize] -> bmult(numerify(lists:reverse(BSize)), ?KILOBYTE);
-        [$B,$M|BSize] -> bmult(numerify(lists:reverse(BSize)), ?MEGABYTE);
-        [$b,$m|BSize] -> bmult(numerify(lists:reverse(BSize)), ?MEGABYTE);
-        [$B,$G|BSize] -> bmult(numerify(lists:reverse(BSize)), ?GIGABYTE);
-        [$b,$g|BSize] -> bmult(numerify(lists:reverse(BSize)),?GIGABYTE);
-        BSize -> numerify(lists:reverse(BSize))
+        [$B,$K|BSize] -> bmult(cuttlefish_util:numerify(lists:reverse(BSize)), ?KILOBYTE);
+        [$b,$k|BSize] -> bmult(cuttlefish_util:numerify(lists:reverse(BSize)), ?KILOBYTE);
+        [$B,$M|BSize] -> bmult(cuttlefish_util:numerify(lists:reverse(BSize)), ?MEGABYTE);
+        [$b,$m|BSize] -> bmult(cuttlefish_util:numerify(lists:reverse(BSize)), ?MEGABYTE);
+        [$B,$G|BSize] -> bmult(cuttlefish_util:numerify(lists:reverse(BSize)), ?GIGABYTE);
+        [$b,$g|BSize] -> bmult(cuttlefish_util:numerify(lists:reverse(BSize)),?GIGABYTE);
+        BSize -> cuttlefish_util:numerify(lists:reverse(BSize))
     end.
 
 -spec bmult(number()|cuttlefish_error:error(), integer()) ->
@@ -68,23 +68,6 @@ bmult({error, _ErrorTerm}=Error, _Mult) ->
     Error;
 bmult(Quantity, Multiplier) ->
     Quantity * Multiplier.
-
--spec numerify(string()) -> integer()|float()|cuttlefish_error:error().
-numerify([$.|_]=Num) -> numerify([$0|Num]);
-numerify(String) ->
-    try list_to_float(String) of
-        Float -> Float
-    catch
-        _:_ ->
-            try list_to_integer(String) of
-                Int -> Int
-            catch
-                _:_ ->
-                    {error, {bytesize_parse, String}}
-            end
-    end.
-
-
 
 -ifdef(TEST).
 to_string_test() ->
@@ -109,7 +92,7 @@ parse_test() ->
     ?assertEqual(1073741824, parse("1gb")),
 
     ?assertEqual(20, parse("20")),
-    ?assertEqual({error, {bytesize_parse, "10MB10"}}, parse("10MB10kb")),
+    ?assertEqual({error, {number_parse, "10MB10"}}, parse("10MB10kb")),
     ok.
 
 -endif.
