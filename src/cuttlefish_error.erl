@@ -91,6 +91,8 @@ xlate({validator_parse, Term}) ->
      );
 xlate({conf_to_latin1, LineNum}) ->
     io_lib:format("Error converting value on line #~p to latin1", [LineNum]);
+xlate({bytesize_parse, Value}) ->
+    io_lib:format("Error converting value ~p to a number of bytes", [Value]);
 xlate({file_open, {File, Reason}}) ->
     io_lib:format("Could not open file (~s) for Reason ~s", [File, Reason]);
 xlate({conf_syntax, {File, {Line, Col}}}) ->
