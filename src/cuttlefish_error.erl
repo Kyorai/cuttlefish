@@ -22,7 +22,7 @@
 -module(cuttlefish_error).
 
 -type error() :: {'error', {atom(), term()}}.
--type errorlist() :: {'errorlist', [error()]}.
+-type errorlist() :: {'error', [error()]}.
 -export_type([error/0, errorlist/0]).
 
 -export([
@@ -153,17 +153,19 @@ contains_error(List) ->
     lists:any(fun is_error/1, List).
 
 -spec is_error(any()) -> boolean().
+is_error({error, []}) -> false;
+is_error({error, [{error, _}|_T]}) -> false;
 is_error({error, _}) -> true;
 is_error(_) -> false.
 
 -spec filter(list()) -> errorlist().
 filter(List) ->
-    {errorlist, lists:filter(fun is_error/1, List)}.
+    {error, lists:filter(fun is_error/1, List)}.
 
 -spec errorlist_maybe(any()) -> any().
 errorlist_maybe(List) when is_list(List) ->
     case filter(List) of
-        {errorlist, []} ->
+        {error, []} ->
             List;
         Errorlist ->
             Errorlist
@@ -198,8 +200,8 @@ contains_error_test() ->
     ok.
 
 filter_test() ->
-    ?assertEqual({errorlist, []}, filter(["hi", "what even is an error?", "bye"])),
-    ?assertEqual({errorlist, [{error, "etoomanythings"}]},
+    ?assertEqual({error, []}, filter(["hi", "what even is an error?", "bye"])),
+    ?assertEqual({error, [{error, "etoomanythings"}]},
                  filter(["hi", {error, "etoomanythings"}, "bye"])),
     ok.
 
@@ -210,7 +212,7 @@ errorlist_maybe_test() ->
     ?assertEqual("string", errorlist_maybe("string")),
 
     ?assertEqual(
-       {errorlist, [{error, "etoomanythings"}]},
+       {error, [{error, "etoomanythings"}]},
        errorlist_maybe(["hi", {error, "etoomanythings"}, "bye"])),
     ?assertEqual(
        ["hi", "what even is an error?", "bye"],

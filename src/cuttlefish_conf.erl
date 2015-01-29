@@ -43,7 +43,7 @@ files(ListOfConfFiles) ->
     {ValidConf, Errors} = lists:foldl(
       fun(ConfFile, {ConfAcc, ErrorAcc}) ->
               case cuttlefish_conf:file(ConfFile) of
-                  {errorlist, ErrorList} ->
+                  {error, ErrorList} ->
                       {ConfAcc, ErrorList ++ ErrorAcc};
                   Conf ->
                       {lists:foldl(
@@ -58,7 +58,7 @@ files(ListOfConfFiles) ->
       ListOfConfFiles),
     case {ValidConf, Errors} of
         {_, []} -> ValidConf;
-        _ -> {errorlist, Errors}
+        _ -> {error, Errors}
     end.
 
 -spec file(file:name()) -> conf() | cuttlefish_error:errorlist().
@@ -66,18 +66,18 @@ file(Filename) ->
     case conf_parse:file(Filename) of
         {error, Reason} ->
             %% Reason is an atom via file:open
-            {errorlist, [{error, {file_open, {Filename, Reason}}}]};
+            {error, [{error, {file_open, {Filename, Reason}}}]};
         {_Conf, Remainder, {{line, L}, {column, C}}} when is_binary(Remainder) ->
-            {errorlist, [{error, {conf_syntax, {Filename, {L, C}}}}]};
+            {error, [{error, {conf_syntax, {Filename, {L, C}}}}]};
         Conf ->
             %% Conf is a proplist, check if any of the values are cuttlefish_errors
             {_, Values} = lists:unzip(Conf),
             case cuttlefish_error:filter(Values) of
-                {errorlist, []} ->
+                {error, []} ->
                     remove_duplicates(Conf);
-                {errorlist, ErrorList} ->
+                {error, ErrorList} ->
                     NewErrorList = [ {error, {in_file, {Filename, E}}} || {error, E} <- ErrorList ],
-                    {errorlist, NewErrorList}
+                    {error, NewErrorList}
             end
     end.
 
@@ -273,12 +273,12 @@ duplicates_multi_test() ->
 
 files_one_nonent_test() ->
     Conf = files(["../test/multi1.conf", "../test/nonent.conf"]),
-    ?assertEqual({errorlist,[{error, {file_open, {"../test/nonent.conf", enoent}}}]}, Conf),
+    ?assertEqual({error,[{error, {file_open, {"../test/nonent.conf", enoent}}}]}, Conf),
     ok.
 
 files_incomplete_parse_test() ->
     Conf = file("../test/incomplete.conf"),
-    ?assertEqual({errorlist, [{error, {conf_syntax, {"../test/incomplete.conf", {3, 1}}}}]}, Conf),
+    ?assertEqual({error, [{error, {conf_syntax, {"../test/incomplete.conf", {3, 1}}}}]}, Conf),
     ok.
 
 generate_element_level_advanced_test() ->

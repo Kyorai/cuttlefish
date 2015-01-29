@@ -72,8 +72,8 @@ map_add_defaults({_, Mappings, _} = Schema, Config) ->
     lager:debug("Adding Defaults"),
     DConfig = add_defaults(Config, Mappings),
     case cuttlefish_error:errorlist_maybe(DConfig) of
-        {errorlist, EList} ->
-            {error, add_defaults, {errorlist, EList}};
+        {error, EList} ->
+            {error, add_defaults, {error, EList}};
         _ ->
             map_value_sub(Schema, DConfig)
     end.
@@ -87,7 +87,7 @@ map_value_sub(Schema, Config) ->
          {SubbedConfig, []} ->
             map_transform_datatypes(Schema, SubbedConfig);
          {_, EList} ->
-            {error, rhs_subs, {errorlist, EList}}
+            {error, rhs_subs, {error, EList}}
     end.
 
 -spec map_transform_datatypes(cuttlefish_schema:schema(), cuttlefish_conf:conf()) ->
@@ -102,7 +102,7 @@ map_transform_datatypes({_, Mappings, _} = Schema, DConfig) ->
         {NewConf, []} ->
             map_validate(Schema, NewConf);
         {_, EList} ->
-            {error, transform_datatypes, {errorlist, EList}}
+            {error, transform_datatypes, {error, EList}}
     end.
 
 -spec map_validate(cuttlefish_schema:schema(), cuttlefish_conf:conf()) ->
@@ -112,8 +112,8 @@ map_validate(Schema, Conf) ->
     %% Any more advanced validators
     lager:debug("Validation"),
     case cuttlefish_error:errorlist_maybe(run_validations(Schema, Conf)) of
-        {errorlist, EList} ->
-            {error, validation, {errorlist, EList}};
+        {error, EList} ->
+            {error, validation, {error, EList}};
         true ->
             {DirectMappings, TranslationsToDrop} = apply_mappings(Schema, Conf),
             apply_translations(Schema, Conf, DirectMappings, TranslationsToDrop)
@@ -174,7 +174,7 @@ apply_translations({Translations, _, _} = Schema, Conf, DirectMappings, Translat
             lager:debug("Applied Translations"),
             Proplist;
         Es ->
-            {error, apply_translations, {errorlist, Es}}
+            {error, apply_translations, {error, Es}}
     end.
 
 
@@ -421,7 +421,7 @@ transform_datatypes(Conf, Mappings) ->
                     case transform_type(DTs, Value) of
                         {ok, NewValue} ->
                             {[{Variable, NewValue}|Acc], ErrorAcc};
-                        {errorlist, EList} ->
+                        {error, EList} ->
                             NewError = {transform_type,
                                         cuttlefish_variable:format(Variable)},
                             {Acc, [{error, NewError}] ++ EList ++ ErrorAcc}
@@ -620,12 +620,12 @@ foldm_either(Fun, List) ->
 
 %% @doc Calls Fun on each element of the list until it returns {ok,
 %% term()}, otherwise accumulates {error, term()} into a list,
-%% wrapping in {errorlist, _} at the end.
+%% wrapping in {error, _} at the end.
 -spec foldm_either(fun((term()) ->
                            {ok, term()}  | cuttlefish_error:error()),
                    list(), list()) ->
                       {ok, term()}  | cuttlefish_error:errorlist().
-foldm_either(_Fun, [], Acc) -> {errorlist, lists:reverse(Acc)};
+foldm_either(_Fun, [], Acc) -> {error, lists:reverse(Acc)};
 foldm_either(Fun, [H|T], Acc) ->
     case Fun(H) of
         {ok, Result} -> {ok, Result};
@@ -1093,7 +1093,7 @@ not_found_test() ->
     ],
     AppConf = map({Translations, Mappings, []}, [{["a"], "foo"}]),
     ?assertEqual({error, apply_translations,
-                  {errorlist,
+                  {error,
                    [{error, {translation_missing_setting,
                              {"b.c", "d"}}}]}},
                  AppConf).
@@ -1106,7 +1106,7 @@ invalid_test() ->
     ],
     AppConf = map({Translations, Mappings, []}, [{["a"], "foo"}]),
     ?assertEqual({error, apply_translations,
-                  {errorlist,
+                  {error,
                    [{error, {translation_invalid_configuration,
                              {"b.c", "review all files"}}}]}},
                  AppConf).

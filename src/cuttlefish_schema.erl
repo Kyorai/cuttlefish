@@ -59,11 +59,11 @@ merger(ListOfFunInputPairs) ->
     Schema = lists:foldr(
         fun({Fun, Input}, {TranslationAcc, MappingAcc, ValidatorAcc}) ->
             case Fun(Input, {TranslationAcc, MappingAcc, ValidatorAcc}) of
-                {errorlist, Errors} ->
+                {error, Errors} ->
                     %% These have already been logged. We're not moving forward with this
                     %% but, return them anyway so the rebar plugin can display them
                     %% with io:format, since it doesn't have lager.
-                    {errorlist, Errors};
+                    {error, Errors};
                 {Translations, Mappings, Validators} ->
                     NewMappings = lists:foldr(
                         fun cuttlefish_mapping:replace/2,
@@ -91,8 +91,8 @@ merger(ListOfFunInputPairs) ->
 %% erlang app setting, *AND* there's no corresponding translation for
 %% that app setting
 -spec filter(schema() | cuttlefish_error:errorlist()) -> schema() | cuttlefish_error:errorlist().
-filter({errorlist, Errorlist}) ->
-    {errorlist, Errorlist};
+filter({error, Errorlist}) ->
+    {error, Errorlist};
 filter({Translations, Mappings, Validators}) ->
     Counts = count_mappings(Mappings),
     {MappingsToCheck, _} = lists:unzip(Counts),
@@ -125,9 +125,9 @@ file(Filename, Schema) ->
     %% support in the future.
     S = unicode:characters_to_list(B, latin1),
     case string(S, Schema) of
-        {errorlist, Errors} ->
+        {error, Errors} ->
             cuttlefish_error:print("Error parsing schema: ~s", [Filename]),
-            {errorlist, Errors};
+            {error, Errors};
         NewSchema ->
             NewSchema
     end.
@@ -153,13 +153,13 @@ string(S, {T, M, V}) ->
                     lists:foreach(fun({error, _Term}=E) ->
                                           cuttlefish_error:print(E) end,
                                   Errors),
-                    {errorlist, Errors}
+                    {error, Errors}
             end;
         {error, {Line, erl_scan, _}, _} ->
             Error = {erl_scan, Line},
             ErrStr = cuttlefish_error:xlate(Error),
             lager:error(lists:flatten(ErrStr)),
-            {errorlist, [{error, Error}]}
+            {error, [{error, Error}]}
     end.
 
 -spec parse_schema(
@@ -324,7 +324,7 @@ comment_parser_test() ->
 
 bad_file_test() ->
     cuttlefish_lager_test_backend:bounce(),
-    {errorlist, ErrorList} = file("../test/bad_erlang.schema"),
+    {error, ErrorList} = file("../test/bad_erlang.schema"),
 
     Logs = cuttlefish_lager_test_backend:get_logs(),
     [L1|Tail] = Logs,
@@ -353,7 +353,7 @@ parse_invalid_erlang_test() ->
     ?assertMatch({match, _}, re:run(Log, "syntax error before: ")),
     ?assertMatch({match, _}, re:run(Log, "'}'")),
 
-   ?assertEqual({errorlist, [{error, {erl_parse, {"syntax error before: '}'", 4}}}]},
+   ?assertEqual({error, [{error, {erl_parse, {"syntax error before: '}'", 4}}}]},
                 Parsed).
 
 
@@ -485,9 +485,9 @@ strings_filtration_test() ->
 error_test() ->
     {ErrorAtom, Errors} = strings(["tyktorp"]),
     io:format("~p", [Errors]),
-    ?assertEqual(errorlist, ErrorAtom),
+    ?assertEqual(error, ErrorAtom),
 
-    {errorlist, [{error, Error}]} = strings(["{mapping, \"a\", [{datatype, unsupported_datatype}]}."]),
+    {error, [{error, Error}]} = strings(["{mapping, \"a\", [{datatype, unsupported_datatype}]}."]),
     ?assertEqual(
         "Unknown parse return: {mapping,\n                          {mapping,\"a\",[{datatype,unsupported_datatype}]}}",
         ?XLATE(Error)),
