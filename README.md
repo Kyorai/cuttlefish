@@ -1,5 +1,4 @@
 * [![Build Status](https://travis-ci.com/rabbitmq/cuttlefish.svg?branch=fix-tests)](https://travis-ci.com/Kyorai/cuttlefish)
-* [![Coverage Status](https://coveralls.io/repos/github/Kyorai/cuttlefish/badge.svg?branch=fix-tests)](https://coveralls.io/github/Kyorai/cuttlefish)
 * [![Hex version](https://img.shields.io/hexpm/v/cuttlefish.svg "Hex version")](https://hex.pm/packages/cuttlefish)
 
 # Cuttlefish
