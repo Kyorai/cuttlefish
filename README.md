@@ -1,4 +1,4 @@
-* [![Build Status](https://travis-ci.com/rabbitmq/cuttlefish.svg?branch=fix-tests)](https://travis-ci.com/Kyorai/cuttlefish)
+* [![Build Status](https://travis-ci.com/Kyorai/cuttlefish.svg?branch=fix-tests)](https://travis-ci.com/Kyorai/cuttlefish)
 * [![Hex version](https://img.shields.io/hexpm/v/cuttlefish.svg "Hex version")](https://hex.pm/packages/cuttlefish)
 
 # Cuttlefish
