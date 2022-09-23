@@ -69,11 +69,12 @@ key <- head:word tail:("." word)* %{
 
 %% A value is any character, with trailing whitespace stripped.
 value <- (!((ws* crlf) / comment) .)+ %{
-    case unicode:characters_to_binary(Node, utf8, latin1) of
-        {_Status, _Begining, _Rest} ->
-            {error, {conf_to_latin1, line(Idx)}};
-        Bin ->
-            binary_to_list(Bin)
+    case unicode:characters_to_list(Node) of
+        {incomplete, _List, _RestBin} ->
+        {error, _List, _RestData} ->
+            {error, {conf_to_unicode, line(Idx)}};
+        Chardata when is_list(Chardata)->
+            Chardata
     end
 %};
 
@@ -88,7 +89,7 @@ include <- ws* "include" ws* included_file_or_dir comment? %{
 %};
 
 included_file_or_dir <- [A-Za-z0-9-\_\.\*\/]+ %{
-    unicode:characters_to_binary(Node, utf8, latin1)
+    unicode:characters_to_binary(Node)
 %};
 
 %% A word is one or more of letters, numbers and dashes or

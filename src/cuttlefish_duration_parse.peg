@@ -10,7 +10,7 @@ duration_segment <- (float / integer) unit `
 
 integer <- [1-9] [0-9]* `list_to_integer(?FLATTEN(Node))`;
 
-unit <- "f" / "w" / "d" / "h" / "ms" / "m" / "s"  `binary_to_atom(Node, latin1)`;
+unit <- "f" / "w" / "d" / "h" / "ms" / "m" / "s"  `binary_to_atom(Node, utf8)`;
 
 float <- ( [0-9]+ "." [0-9]+ ) / ( "." [0-9]+ ) `
    case Node of 
