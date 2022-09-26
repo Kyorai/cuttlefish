@@ -212,10 +212,9 @@ escaped_dots_are_removed_test() ->
     ok.
 
 utf8_test() ->
-    Conf = conf_parse:parse("setting = thing" ++ [338] ++ "\n"),
-    ?assertEqual([{["setting"],
-            {error, {conf_to_latin1, 1}}
-        }], Conf),
+    Actual = conf_parse:parse("setting = thing" ++ [338] ++ "\n"),
+    Expected = [{["setting"], [116,104,105,110,103,338]}],
+    ?assertMatch(Expected, Actual),
     ok.
 
 gh_1_two_tab_test() ->
