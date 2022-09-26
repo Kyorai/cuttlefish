@@ -71,6 +71,7 @@ key <- head:word tail:("." word)* %{
 value <- (!((ws* crlf) / comment) .)+ %{
     case unicode:characters_to_list(Node) of
         {incomplete, _List, _RestBin} ->
+            {error, {conf_to_unicode, line(Idx)}};
         {error, _List, _RestData} ->
             {error, {conf_to_unicode, line(Idx)}};
         Chardata when is_list(Chardata)->

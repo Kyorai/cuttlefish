@@ -103,7 +103,7 @@ fold_conf_files(Filename, Conf0) ->
 
 expand_values(Filename, Conf) ->
     lists:map(fun({K, Value0}) ->
-                case re:run(Value0, "^\\$\\(\\<(.+)\\)$", [{capture, all_but_first, list}]) of
+                case re:run(Value0, "^\\$\\(\\<(.+)\\)$", [unicode, {capture, all_but_first, list}]) of
                     {match, [IncludeFilename0]} ->
                         % This is a value of the format "$(<IncludeFilename)", let's read the contents
                         % of `IncludeFilename` and use that as the new value
@@ -111,11 +111,11 @@ expand_values(Filename, Conf) ->
                         % strip all space chars from beginning/end and join the relative filename with the
                         % location of the sourcing .conf file
                         IncludeFilename = filename:join([filename:dirname(Filename),
-                                                         re:replace(IncludeFilename0, "(^\\s+)|(\\s+$)", "", [{return, list}])]),
+                                                         re:replace(IncludeFilename0, "(^\\s+)|(\\s+$)", "", [unicode, {return, list}])]),
                         % read the entire file contents and strip newline
                         case file:read_file(IncludeFilename) of
                           {ok, Value} ->
-                            {K, re:replace(Value, "[\n\r]$", "", [{return, list}])};
+                            {K, re:replace(Value, "[\n\r]$", "", [unicode, {return, list}])};
                           {error, Reason} ->
                             throw({unable_to_open, IncludeFilename, Reason})
                         end;

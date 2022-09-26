@@ -189,11 +189,13 @@ parse(Input) when is_binary(Input) ->
 -spec 'value'(input(), index()) -> parse_result().
 'value'(Input, Index) ->
   p(Input, Index, 'value', fun(I,D) -> (p_one_or_more(p_seq([p_not(p_choose([p_seq([p_zero_or_more(fun 'ws'/2), fun 'crlf'/2]), fun 'comment'/2])), p_anything()])))(I,D) end, fun(Node, Idx) ->
-    case unicode:characters_to_binary(Node, utf8, latin1) of
-        {_Status, _Begining, _Rest} ->
-            {error, {conf_to_latin1, line(Idx)}};
-        Bin ->
-            binary_to_list(Bin)
+    case unicode:characters_to_list(Node) of
+        {incomplete, _List, _RestBin} ->
+            {error, {conf_to_unicode, line(Idx)}};
+        {error, _List, _RestData} ->
+            {error, {conf_to_unicode, line(Idx)}};
+        Chardata when is_list(Chardata)->
+            Chardata
     end
  end).
 
@@ -211,7 +213,7 @@ parse(Input) when is_binary(Input) ->
 -spec 'included_file_or_dir'(input(), index()) -> parse_result().
 'included_file_or_dir'(Input, Index) ->
   p(Input, Index, 'included_file_or_dir', fun(I,D) -> (p_one_or_more(p_charclass(<<"[A-Za-z0-9-\_\.\*\\/]">>)))(I,D) end, fun(Node, _Idx) ->
-    unicode:characters_to_binary(Node, utf8, latin1)
+    unicode:characters_to_binary(Node)
  end).
 
 -spec 'word'(input(), index()) -> parse_result().

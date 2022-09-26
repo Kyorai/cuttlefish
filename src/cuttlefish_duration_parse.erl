@@ -46,7 +46,7 @@ file(Filename) ->
     end.
 
 -spec parse(binary() | list()) -> any().
-parse(List) when is_list(List) -> parse(list_to_binary(List));
+parse(List) when is_list(List) -> parse(unicode:characters_to_binary(List));
 parse(Input) when is_binary(Input) ->
   _ = setup_memo(),
   Result = case 'duration'(Input,{{line,1},{column,1}}) of
@@ -73,7 +73,7 @@ parse(Input) when is_binary(Input) ->
 
 -spec 'unit'(input(), index()) -> parse_result().
 'unit'(Input, Index) ->
-  p(Input, Index, 'unit', fun(I,D) -> (p_choose([p_string(<<"f">>), p_string(<<"w">>), p_string(<<"d">>), p_string(<<"h">>), p_string(<<"ms">>), p_string(<<"m">>), p_string(<<"s">>)]))(I,D) end, fun(Node, _Idx) ->binary_to_atom(Node, latin1) end).
+  p(Input, Index, 'unit', fun(I,D) -> (p_choose([p_string(<<"f">>), p_string(<<"w">>), p_string(<<"d">>), p_string(<<"h">>), p_string(<<"ms">>), p_string(<<"m">>), p_string(<<"s">>)]))(I,D) end, fun(Node, _Idx) ->binary_to_atom(Node, utf8) end).
 
 -spec 'float'(input(), index()) -> parse_result().
 'float'(Input, Index) ->

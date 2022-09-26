@@ -6,17 +6,12 @@
 escript_utf8_test() ->
     _ = cuttlefish_test_logging:set_up(),
     _ = cuttlefish_test_logging:bounce(error),
-
-    ?assertThrow(stop_deactivate, cuttlefish_escript:main(
-              "-d test_fixtures/escript_utf8_test/generated.config "
-              "-s test_fixtures/escript_utf8_test/lib "
-              "-e test_fixtures/escript_utf8_test/etc "
-              "-c test_fixtures/escript_utf8_test/etc/utf8.conf generate"
-            )),
-    [Log] = cuttlefish_test_logging:get_logs(),
-    ?assertMatch({match, _}, re:run(Log, "utf8.conf: Error converting value on line #1 to latin1")),
+    ok = cuttlefish_escript:main("-d test_fixtures/escript_utf8_test/generated.config "
+                                 "-s test_fixtures/escript_utf8_test/lib "
+                                 "-e test_fixtures/escript_utf8_test/etc "
+                                 "-c test_fixtures/escript_utf8_test/etc/utf8.conf generate"),
+    [] = cuttlefish_test_logging:get_logs(),
     ok.
-
 
 advanced_config_format_test() ->
     _ = cuttlefish_test_logging:set_up(),
