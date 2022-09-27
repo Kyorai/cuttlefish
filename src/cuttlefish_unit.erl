@@ -22,9 +22,9 @@ render_template(FileName, Context) ->
     {ok, Bin, _} = erl_prim_loader:get_file(filename:absname(FileName)),
     %% Stolen from rebar_templater:render/2
     %% Be sure to escape any double-quotes before rendering...
-    ReOpts = [global, {return, list}],
-    Str0 = re:replace(Bin, "\\\\", "\\\\\\", ReOpts, [unicode]),
-    Str1 = re:replace(Str0, "\"", "\\\\\"", ReOpts, [unicode]),
+    ReOpts = [unicode, global, {return, list}],
+    Str0 = re:replace(Bin, "\\\\", "\\\\\\", ReOpts),
+    Str1 = re:replace(Str0, "\"", "\\\\\"", ReOpts),
 
     %% the mustache module is only available in the context of a rebar run.
     case {code:ensure_loaded(mustache), code:ensure_loaded(rebar_mustache), code:ensure_loaded(bbmustache)} of
