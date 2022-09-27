@@ -419,7 +419,7 @@ engage_cuttlefish(ParsedArgs) ->
             prune(Destination, MaxHistory),
             prune(DestinationVMArgs, MaxHistory),
 
-            case {maybe_write_file(Destination, "~tp.\n", FinalAppConfig),
+            case {maybe_write_file(Destination, "~tp.~n", FinalAppConfig),
                   maybe_write_file(DestinationVMArgs, "~ts", string:join(FinalVMArgs, "\n"))} of
                 {ok, ok}  ->
                     {Destination, DestinationVMArgs};
@@ -438,7 +438,8 @@ maybe_write_file(_, _, []) ->
     % nothing to write, write nothing
     ok;
 maybe_write_file(Filename, Format, Data) ->
-    file:write_file(Filename, io_lib:fwrite(Format, [Data])).
+    Chars = io_lib:fwrite(Format, [Data]),
+    file:write_file(Filename, unicode:characters_to_binary(Chars)).
 
 -spec prune(file:name_all(), integer()) -> ok.
 prune(Filename, MaxHistory) ->

@@ -3,6 +3,13 @@
 -include_lib("eunit/include/eunit.hrl").
 
 escript_utf8_test() ->
+    ExpectedSetting = "thingŒ",
+    ExpectedSetting2 = "C:\\ProgramData\\RabbitMQ Sérvér\\Евгений\\rabbitmq.conf",
+    ExpectedSetting3 = "ascii string",
+    Expected = [{setting3, ExpectedSetting3},
+                {setting2,ExpectedSetting2},
+                {setting, ExpectedSetting}],
+
     BaseDir = "test_fixtures/escript_utf8_test",
     EtcDir = filename:join(BaseDir, "etc"),
     LibDir = filename:join(BaseDir, "lib"),
@@ -26,8 +33,7 @@ escript_utf8_test() ->
 
     [AppConfig0] = filelib:wildcard("app.*.config", GeneratedConfigDir),
     AppConfig1 = filename:join(GeneratedConfigDir, AppConfig0),
-    {ok, Actual} = file:read_file(AppConfig1),
-    Expected = [{setting2,<<"TODO"/utf8>>}, {setting, <<"thingŒ"/utf8>>}],
+    {ok, [Actual]} = file:consult(AppConfig1),
     ?assertMatch(Expected, Actual),
     ok.
 
