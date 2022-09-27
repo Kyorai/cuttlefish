@@ -48,7 +48,7 @@ generate(Config0, ReltoolFile) ->
                         lists:flatten(filename:join(TargetDir, element(3, Schema)))
                     || Schema <- SchemaOverlays]),
 
-                    io:format("Schema: ~p~n", [Schemas]),
+                    io:format("Schema: ~tp~n", [Schemas]),
 
                     case cuttlefish_schema:files(Schemas) of
                         {errorlist, _Es} ->

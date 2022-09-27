@@ -13,9 +13,9 @@ stringify(VMArgsProplist) ->
 
 
 stringify_line(K, V) when is_list(V) ->
-  lists:flatten(io_lib:format("~s ~s", [K, V]));
+  lists:flatten(io_lib:format("~ts ~ts", [K, V]));
 stringify_line(K, V) ->
-  lists:flatten(io_lib:format("~s ~w", [K, V])).
+  lists:flatten(io_lib:format("~ts ~w", [K, V])).
 
 -ifdef(TEST).
 

@@ -23,8 +23,8 @@ render_template(FileName, Context) ->
     %% Stolen from rebar_templater:render/2
     %% Be sure to escape any double-quotes before rendering...
     ReOpts = [global, {return, list}],
-    Str0 = re:replace(Bin, "\\\\", "\\\\\\", ReOpts),
-    Str1 = re:replace(Str0, "\"", "\\\\\"", ReOpts),
+    Str0 = re:replace(Bin, "\\\\", "\\\\\\", ReOpts, [unicode]),
+    Str1 = re:replace(Str0, "\"", "\\\\\"", ReOpts, [unicode]),
 
     %% the mustache module is only available in the context of a rebar run.
     case {code:ensure_loaded(mustache), code:ensure_loaded(rebar_mustache), code:ensure_loaded(bbmustache)} of
@@ -157,7 +157,7 @@ key_no_match(Key) ->
 -spec dump_to_file(any(), string()) -> ok.
 dump_to_file(ErlangTerm, Filename) ->
     {ok, S} = file:open(Filename, [write,append]),
-    io:format(S, "~p~n", [ErlangTerm]),
+    io:format(S, "~tp~n", [ErlangTerm]),
     _ = file:close(S),
     ok.
 
@@ -181,7 +181,7 @@ multiple_schema_generate_templated_config_test() ->
                         ], []},
 
     Config = cuttlefish_unit:generate_templated_config("test/sample_mustache.schema", [], Context, PrereqSchema),
-    _ = ?LOG_ERROR("~p", [Config]),
+    _ = ?LOG_ERROR("~tp", [Config]),
     assert_config(Config, "app_a.setting_b", "/c/mustache/a.b"),
     ok.
 

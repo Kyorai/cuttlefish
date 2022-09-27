@@ -315,7 +315,7 @@ fqdn_conversions(_String, FQDNStr, {match, _}, Port) ->
 
 validate_fqdn(Str) ->
     %% inspired by https://regexr.com/3g5j0, amended to disallow [:space:]
-    re:run(Str, "^(?!:\/\/)(?=[^[:space:]]{1,255}$)((.{1,63}\.){1,127}(?![0-9]*$)[a-z0-9-]+\.?)$").
+    re:run(Str, "^(?!:\/\/)(?=[^[:space:]]{1,255}$)((.{1,63}\.){1,127}(?![0-9]*$)[a-z0-9-]+\.?)$", [unicode]).
 
 droplast(List) ->
     lists:sublist(List, length(List)-1).

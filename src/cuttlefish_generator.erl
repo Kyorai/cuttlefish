@@ -27,8 +27,6 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--define(FMT(F,A), lists:flatten(io_lib:format(F,A))).
-
 -define(LSUB, "$(").
 -define(RSUB, ")").
 -define(LSUBLEN, 2).
@@ -193,7 +191,7 @@ fold_apply_translation(Conf, Schema, TranslationsToDrop) ->
                 false ->
                     {XlatFun, XlatArgs} = prepare_translation_fun(Conf, Schema,
                                                                   Mapping, Xlat),
-                    _ = ?LOG_DEBUG("Running translation for ~s", [Mapping]),
+                    _ = ?LOG_DEBUG("Running translation for ~ts", [Mapping]),
                     case try_apply_translation(Mapping, XlatFun, XlatArgs) of
                         unset ->
                             {Acc, Errors};
@@ -203,7 +201,7 @@ fold_apply_translation(Conf, Schema, TranslationsToDrop) ->
                             {Acc, [{error, Term}|Errors]}
                     end;
                 _ ->
-                    _ = ?LOG_DEBUG("~p in Translations to drop...", [Mapping]),
+                    _ = ?LOG_DEBUG("~tp in Translations to drop...", [Mapping]),
                     {Acc, Errors}
             end
         end.
@@ -417,7 +415,7 @@ transform_datatypes(Conf, Mappings, ParsedArgs) ->
                     %% It will prevent anything from starting, and will let you know
                     %% that you're trying to set something that has no effect
                     VarName = cuttlefish_variable:format(Variable),
-                    _ = ?LOG_ERROR("You've tried to set ~s, but there is no setting with that name.", [VarName]),
+                    _ = ?LOG_ERROR("You've tried to set ~ts, but there is no setting with that name.", [VarName]),
                     _ = ?LOG_ERROR("  Did you mean one of these?"),
 
                     Possibilities = [ begin
@@ -425,7 +423,7 @@ transform_datatypes(Conf, Mappings, ParsedArgs) ->
                         {cuttlefish_util:levenshtein(VarName, MapVarName), MapVarName}
                     end || M <- Mappings],
                     Sorted = lists:sort(Possibilities),
-                    _ = [ _ = ?LOG_ERROR("    ~s", [T]) || {_, T} <- lists:sublist(Sorted, 3) ],
+                    _ = [ _ = ?LOG_ERROR("    ~ts", [T]) || {_, T} <- lists:sublist(Sorted, 3) ],
                     {Acc, [ {error, {unknown_variable, VarName}} | ErrorAcc ]};
                 MappingRecord ->
                     DTs = cuttlefish_mapping:datatype(MappingRecord),
@@ -692,7 +690,7 @@ bad_conf_test() ->
     ],
 
     NewConfig = map({Translations, Mappings, []}, Conf),
-    io:format("NewConf: ~p~n", [NewConfig]),
+    io:format("NewConf: ~tp~n", [NewConfig]),
 
     ?assertMatch({error, transform_datatypes, _}, NewConfig),
     ok.
@@ -735,7 +733,7 @@ add_defaults_test() ->
     ],
 
     DConf = add_defaults(Conf, Mappings),
-    io:format("DConf: ~p~n", [DConf]),
+    io:format("DConf: ~tp~n", [DConf]),
     ?assertEqual(9, length(DConf)),
     ?assertEqual("q",               proplists:get_value(["a","b","c"], DConf)),
     ?assertNotEqual("l",            proplists:get_value(["a","c","d"], DConf)),
@@ -828,7 +826,7 @@ find_mapping_test() ->
         cuttlefish_mapping:parse({mapping, "variable.with.fixed.name", "", [{ default, 0}]}),
         cuttlefish_mapping:parse({mapping, "variable.with.$matched.name", "",  [{ default, 1}]})
     ],
-    io:format("Mappings: ~p~n", [Mappings]),
+    io:format("Mappings: ~tp~n", [Mappings]),
 
     ?assertEqual(
         ["variable","with","fixed","name"],

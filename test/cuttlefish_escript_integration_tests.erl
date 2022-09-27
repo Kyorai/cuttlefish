@@ -61,7 +61,7 @@ escript_prune(DashM, ExpectedMax) ->
 
     {_, _, T} = lists:foldl(
         fun(Counter, {PrevConfigs, PrevVMArgs, Tests}) ->
-            io:format("Running iteration: ~p", [Counter]),
+            io:format("Running iteration: ~tp", [Counter]),
             %% Timer to keep from generating more than one file per second
             timer:sleep(1100),
             cuttlefish_escript:main(
