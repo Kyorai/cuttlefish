@@ -97,8 +97,8 @@ main(Args) ->
         }}, LC0),
     logger:update_handler_config(?LOGGER_HANDLER, LC1),
 
-    _ = ?LOG_DEBUG("Cuttlefish log level is set to ~s", [LogLevel]),
-    _ = ?LOG_DEBUG("Parsed arguments: ~p", [ParsedArgs]),
+    _ = ?LOG_DEBUG("Cuttlefish log level is set to ~ts", [LogLevel]),
+    _ = ?LOG_DEBUG("Parsed arguments: ~tp", [ParsedArgs]),
 
     case Command of
         help ->
@@ -125,15 +125,15 @@ effective(ParsedArgs) ->
     case {AppConfigExists, VMArgsExists} of
         {false, false} ->
             AdvancedConfigFile = proplists:get_value(advanced_conf_file, ParsedArgs, filename:join(EtcDir, "advanced.config")),
-            _ = ?LOG_DEBUG("Will look for advanced.config at '~s'", [AdvancedConfigFile]),
+            _ = ?LOG_DEBUG("Will look for advanced.config at '~ts'", [AdvancedConfigFile]),
             AdvConfig = case filelib:is_file(AdvancedConfigFile) of
                 true ->
-                    _ = ?LOG_DEBUG("~s detected, overlaying proplists", [AdvancedConfigFile]),
+                    _ = ?LOG_DEBUG("~ts detected, overlaying proplists", [AdvancedConfigFile]),
                     case file:consult(AdvancedConfigFile) of
                         {ok, [AdvancedConfig]} ->
                             AdvancedConfig;
                         {error, Error} ->
-                            _ = ?LOG_ERROR("Error parsing advanced.config: ~s", [file:format_error(Error)]),
+                            _ = ?LOG_ERROR("Error parsing advanced.config: ~ts", [file:format_error(Error)]),
                             stop_deactivate()
                     end;
                 _ ->
@@ -150,13 +150,13 @@ effective(ParsedArgs) ->
             ?STDOUT("Disabling cuttlefish, legacy configuration files found:", []),
             case AppConfigExists of
                 true ->
-                    ?STDOUT("  ~s", [ExistingAppConfigName]);
+                    ?STDOUT("  ~ts", [ExistingAppConfigName]);
                 _ ->
                     ok
             end,
             case VMArgsExists of
                 true ->
-                    ?STDOUT("  ~s", [ExistingVMArgsName]);
+                    ?STDOUT("  ~ts", [ExistingVMArgsName]);
                 _ ->
                     ok
             end,
@@ -173,7 +173,7 @@ describe(_ParsedArgs, []) ->
 describe(ParsedArgs, [Query|_]) when is_list(Query) ->
     QDef = cuttlefish_variable:tokenize(Query),
 
-    _ = ?LOG_DEBUG("cuttlefish describe '~s'", [Query]),
+    _ = ?LOG_DEBUG("cuttlefish describe '~ts'", [Query]),
     {_, Mappings, _} = load_schema(ParsedArgs),
 
     FindResults = fun(QueryVar) ->
@@ -186,33 +186,33 @@ describe(ParsedArgs, [Query|_]) when is_list(Query) ->
 
     case FindResults(QDef) of
         [] ->
-            ?STDOUT("Variable '~s' not found", [Query]);
+            ?STDOUT("Variable '~ts' not found", [Query]);
         [Match|_] ->
-            ?STDOUT("Documentation for ~s", [cuttlefish_variable:format(cuttlefish_mapping:variable(Match))]),
+            ?STDOUT("Documentation for ~ts", [cuttlefish_variable:format(cuttlefish_mapping:variable(Match))]),
             _ = case {cuttlefish_mapping:doc(Match), cuttlefish_mapping:see(Match)} of
                 {[], []} ->
                     ok;
                 {[], See} ->
                     _ = [ begin
                           M = hd(FindResults(S)),
-                          [ ?STDOUT("~s", [Line]) || Line <- cuttlefish_mapping:doc(M)]
+                          [ ?STDOUT("~ts", [Line]) || Line <- cuttlefish_mapping:doc(M)]
                     end || S <- See],
                     ok;
                 {Docs, []} ->
-                    [ ?STDOUT("~s", [Line]) || Line <- Docs];
+                    [ ?STDOUT("~ts", [Line]) || Line <- Docs];
                 {Docs, See} ->
-                    _ = [ ?STDOUT("~s", [Line]) || Line <- Docs],
+                    _ = [ ?STDOUT("~ts", [Line]) || Line <- Docs],
                     ?STDOUT("See also:", []),
-                    [?STDOUT("    ~s", [cuttlefish_variable:format(S)]) || S <- See]
+                    [?STDOUT("    ~ts", [cuttlefish_variable:format(S)]) || S <- See]
             end,
             ?STDOUT("", []),
             ValidValues = [
-                            ?FORMAT("~n     - ~s", [cuttlefish_conf:pretty_datatype(Type)]) ||
+                            ?FORMAT("~n     - ~ts", [cuttlefish_conf:pretty_datatype(Type)]) ||
                               Type <- lists:flatten([cuttlefish_mapping:datatype(Match)]) ],
-            ?STDOUT("   Valid Values: ~s", [ValidValues]),
+            ?STDOUT("   Valid Values: ~ts", [ValidValues]),
             case cuttlefish_mapping:has_default(Match) of
                 true ->
-                    ?STDOUT("   Default Value : ~s",
+                    ?STDOUT("   Default Value : ~ts",
                             [format_datatype(cuttlefish_mapping:default(Match),
                                              cuttlefish_mapping:datatype(Match))]);
                 false ->
@@ -222,12 +222,12 @@ describe(ParsedArgs, [Query|_]) when is_list(Query) ->
             case lists:keyfind(QDef, 1, Conf) of
                 false ->
                     ConfFile = proplists:get_value(conf_file, ParsedArgs),
-                    ?STDOUT("   Value not set in ~s", [ConfFile]);
+                    ?STDOUT("   Value not set in ~ts", [ConfFile]);
                 {_, CValue} ->
                     ConfiguredValue = format_datatype(CValue, cuttlefish_mapping:datatype(Match)),
-                    ?STDOUT("   Set Value     : ~s", [ConfiguredValue])
+                    ?STDOUT("   Set Value     : ~ts", [ConfiguredValue])
             end,
-            ?STDOUT("   Internal key  : ~s", [cuttlefish_mapping:mapping(Match)])
+            ?STDOUT("   Internal key  : ~ts", [cuttlefish_mapping:mapping(Match)])
     end,
     stop_deactivate().
 
@@ -260,20 +260,20 @@ generate(ParsedArgs) ->
     %% even though cuttlefish is awesome
     FilesToUse = case {AppConfigExists, VMArgsExists} of
         {true, true} ->
-            _ = ?LOG_INFO("~s and ~s exists, disabling cuttlefish.", [ExistingAppConfigName, ExistingVMArgsName]),
+            _ = ?LOG_INFO("~ts and ~ts exists, disabling cuttlefish.", [ExistingAppConfigName, ExistingVMArgsName]),
             _ = ?LOG_INFO("If you'd like to know more about cuttlefish, check your local library!", []),
             _ = ?LOG_INFO(" or see http://github.com/Kyorai/cuttlefish", []),
             {ExistingAppConfigName, ExistingVMArgsName};
         {true, false} ->
-            _ = ?LOG_INFO("~s exists, generating vm.args", [ExistingAppConfigName]),
+            _ = ?LOG_INFO("~ts exists, generating vm.args", [ExistingAppConfigName]),
             {_, NewVMArgs} = engage_cuttlefish(ParsedArgs),
             {ExistingAppConfigName, NewVMArgs};
         {false, true} ->
-            _ = ?LOG_INFO("~s exists, generating app.config", [ExistingVMArgsName]),
+            _ = ?LOG_INFO("~ts exists, generating app.config", [ExistingVMArgsName]),
             {NewAppConfig, _} = engage_cuttlefish(ParsedArgs),
             {NewAppConfig, ExistingVMArgsName};
         _ ->
-            _ = ?LOG_INFO("No app.config or vm.args detected in ~s, activating cuttlefish", [EtcDir]),
+            _ = ?LOG_INFO("No app.config or vm.args detected in ~ts, activating cuttlefish", [EtcDir]),
             engage_cuttlefish(ParsedArgs)
     end,
 
@@ -291,7 +291,7 @@ generate(ParsedArgs) ->
             %% but it is not! the erlang vm allows us to access all arguments to the erl
             %% command EXCEPT '-args_file', so in order to get access to this file location
             %% from within the vm, we need to pass it in twice.
-            ?STDOUT(" -config ~s -args_file ~s -vm_args ~s ", [AppConf, VMArgs, VMArgs]),
+            ?STDOUT(" -config ~ts -args_file ~ts -vm_args ~ts ", [AppConf, VMArgs, VMArgs]),
             stop_ok()
     end.
 
@@ -311,7 +311,7 @@ load_schema(ParsedArgs) ->
             _ = ?LOG_DEBUG("No Schema files found in specified", []),
             stop_deactivate();
         _ ->
-            _ = ?LOG_DEBUG("SchemaFiles: ~p", [SortedSchemaFiles])
+            _ = ?LOG_DEBUG("SchemaFiles: ~tp", [SortedSchemaFiles])
     end,
 
     Schema = cuttlefish_schema:files(SortedSchemaFiles),
@@ -325,7 +325,7 @@ load_schema(ParsedArgs) ->
 
 load_conf(ParsedArgs) ->
     ConfFiles = proplists:get_all_values(conf_file, ParsedArgs),
-    _ = ?LOG_DEBUG("ConfFiles: ~p", [ConfFiles]),
+    _ = ?LOG_DEBUG("ConfFiles: ~tp", [ConfFiles]),
     case cuttlefish_conf:files(ConfFiles) of
         {errorlist, Errors} ->
             _ = [ _ = ?LOG_ERROR(cuttlefish_error:xlate(E)) ||
@@ -352,7 +352,7 @@ writable_destination_path(ParsedArgs) ->
             AbsoluteDestPath;
         {error, E} ->
             _ = ?LOG_ERROR(
-                "Error creating ~s: ~s",
+                "Error creating ~ts: ~ts",
                 [AbsoluteDestPath, file:format_error(E)]),
             error
     end.
@@ -374,32 +374,32 @@ engage_cuttlefish(ParsedArgs) ->
     DestinationVMArgsFilename = filename_maker(proplists:get_value(dest_file, ParsedArgs, "vm"), "args"),
     DestinationVMArgs = filename:join(AbsPath, DestinationVMArgsFilename),
 
-    _ = ?LOG_DEBUG("Generating config in: ~p", [Destination]),
-    _ = ?LOG_DEBUG("Generating vm.args in: ~p", [DestinationVMArgs]),
+    _ = ?LOG_DEBUG("Generating config in: ~tp", [Destination]),
+    _ = ?LOG_DEBUG("Generating vm.args in: ~tp", [DestinationVMArgs]),
 
     Schema = load_schema(ParsedArgs),
     Conf = load_conf(ParsedArgs),
     NewConfig = case cuttlefish_generator:map(Schema, Conf, ParsedArgs) of
         {error, Phase, {errorlist, Errors}} ->
-            _ = ?LOG_ERROR("Error generating configuration in phase ~s", [Phase]),
+            _ = ?LOG_ERROR("Error generating configuration in phase ~ts", [Phase]),
             _ = [ cuttlefish_error:print(E) || E <- Errors],
             stop_deactivate();
         ValidConfig -> ValidConfig
     end,
 
     AdvancedConfigFile = proplists:get_value(advanced_conf_file, ParsedArgs, filename:join(EtcDir, "advanced.config")),
-    _ = ?LOG_DEBUG("AdvancedConfigFile: ~p", [AdvancedConfigFile]),
+    _ = ?LOG_DEBUG("AdvancedConfigFile: ~tp", [AdvancedConfigFile]),
     FinalConfig = case filelib:is_file(AdvancedConfigFile) of
         true ->
-            _ = ?LOG_INFO("advanced config file is detected at ~s, overlaying proplists", [AdvancedConfigFile]),
+            _ = ?LOG_INFO("advanced config file is detected at ~ts, overlaying proplists", [AdvancedConfigFile]),
             case file:consult(AdvancedConfigFile) of
                 {ok, [AdvancedConfig]} ->
                     cuttlefish_advanced:overlay(NewConfig, AdvancedConfig);
                 {ok, OtherTerms} ->
-                    _ = ?LOG_ERROR("Error parsing ~s, incorrect format: ~p", [AdvancedConfigFile, OtherTerms]),
+                    _ = ?LOG_ERROR("Error parsing ~ts, incorrect format: ~tp", [AdvancedConfigFile, OtherTerms]),
                     stop_deactivate();
                 {error, Error} ->
-                    _ = ?LOG_ERROR("Error parsing ~s: ~s", [AdvancedConfigFile, file:format_error(Error)]),
+                    _ = ?LOG_ERROR("Error parsing ~ts: ~ts", [AdvancedConfigFile, file:format_error(Error)]),
                     stop_deactivate()
             end;
         _ ->
@@ -419,8 +419,8 @@ engage_cuttlefish(ParsedArgs) ->
             prune(Destination, MaxHistory),
             prune(DestinationVMArgs, MaxHistory),
 
-            case {maybe_write_file(Destination, "~p.\n", FinalAppConfig),
-                  maybe_write_file(DestinationVMArgs, "~s", string:join(FinalVMArgs, "\n"))} of
+            case {maybe_write_file(Destination, "~tp.\n", FinalAppConfig),
+                  maybe_write_file(DestinationVMArgs, "~ts", string:join(FinalVMArgs, "\n"))} of
                 {ok, ok}  ->
                     {Destination, DestinationVMArgs};
                 {Err1, Err2} ->
@@ -461,7 +461,7 @@ delete([File|Files], MaxHistory) ->
     case file:delete(File) of
         ok -> ok;
         {error, Reason} ->
-            _ = ?LOG_ERROR("Could not delete ~s, ~p", [File, Reason])
+            _ = ?LOG_ERROR("Could not delete ~ts, ~tp", [File, Reason])
     end,
     delete(Files, MaxHistory).
 
@@ -475,14 +475,14 @@ delete([File|Files], MaxHistory) ->
 maybe_log_file_error(_, ok) ->
     ok;
 maybe_log_file_error(Filename, {error, Reason}) ->
-    _ = ?LOG_ERROR("Error writing ~s: ~s", [Filename, file:format_error(Reason)]),
+    _ = ?LOG_ERROR("Error writing ~ts: ~ts", [Filename, file:format_error(Reason)]),
     ok.
 
 -spec check_existence(string(), string()) -> {boolean(), string()}.
 check_existence(EtcDir, Filename) ->
     FullName = filename:join(EtcDir, Filename), %% Barfolomew
     Exists = filelib:is_file(FullName),
-    _ = ?LOG_INFO("Checking ~s exists... ~p", [FullName, Exists]),
+    _ = ?LOG_INFO("Checking ~ts exists... ~tp", [FullName, Exists]),
     {Exists, FullName}.
 
 filename_maker(Filename, Extension) ->
@@ -495,7 +495,7 @@ filename_maker(no_suffix, Filename, _Extension) -> Filename;
 filename_maker(add_suffix, Filename, Extension) ->
     {{Y, M, D}, {HH, MM, SS}} = calendar:local_time(),
     _DestinationFilename =
-        io_lib:format("~s.~p.~s.~s.~s.~s.~s.~s",
+        io_lib:format("~ts.~tp.~ts.~ts.~ts.~ts.~ts.~ts",
             [Filename,
             Y,
             zero_pad(M),
@@ -530,7 +530,7 @@ print_schema(Schema) ->
         Mappings
         ),
     [
-        io:format(standard_error, "~s ~s~n",
+        io:format(standard_error, "~ts ~ts~n",
             [string:left(M, Max+2, $\s), V])
     || {M, V} <- ListOfMappings].
 

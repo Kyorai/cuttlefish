@@ -1,16 +1,34 @@
 -module(cuttlefish_escript_integration_tests).
 
--include_lib("kernel/include/logger.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 escript_utf8_test() ->
+    BaseDir = "test_fixtures/escript_utf8_test",
+    EtcDir = filename:join(BaseDir, "etc"),
+    LibDir = filename:join(BaseDir, "lib"),
+    ConfFile = filename:join(EtcDir, "utf8.conf"),
+    GeneratedConfigDir = filename:join(BaseDir, "generated.config"),
+
     _ = cuttlefish_test_logging:set_up(),
     _ = cuttlefish_test_logging:bounce(error),
-    ok = cuttlefish_escript:main("-d test_fixtures/escript_utf8_test/generated.config "
-                                 "-s test_fixtures/escript_utf8_test/lib "
-                                 "-e test_fixtures/escript_utf8_test/etc "
-                                 "-c test_fixtures/escript_utf8_test/etc/utf8.conf generate"),
+
+    %% Empty workspace
+    case file:list_dir(GeneratedConfigDir) of
+        {ok, FilenamesToDelete} ->
+            [ file:delete(filename:join([GeneratedConfigDir, F])) || F <- FilenamesToDelete ];
+        _ -> ok
+    end,
+
+    Args = io_lib:format("-d ~ts -s ~ts -e ~ts -c ~ts generate",
+                         [GeneratedConfigDir, LibDir, EtcDir, ConfFile]),
+    ok = cuttlefish_escript:main(Args),
     [] = cuttlefish_test_logging:get_logs(),
+
+    [AppConfig0] = filelib:wildcard("app.*.config", GeneratedConfigDir),
+    AppConfig1 = filename:join(GeneratedConfigDir, AppConfig0),
+    {ok, Actual} = file:read_file(AppConfig1),
+    Expected = [{setting2,<<"TODO"/utf8>>}, {setting, <<"thingŒ"/utf8>>}],
+    ?assertMatch(Expected, Actual),
     ok.
 
 advanced_config_format_test() ->
