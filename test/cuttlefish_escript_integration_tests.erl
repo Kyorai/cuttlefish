@@ -10,6 +10,9 @@ escript_utf8_test() ->
                 {setting2,ExpectedSetting2},
                 {setting, ExpectedSetting}],
 
+    ?debugFmt("ExpectedSetting ~tp~n", [ExpectedSetting]),
+    ?debugFmt("ExpectedSetting2 ~tp~n", [ExpectedSetting2]),
+
     BaseDir = "test_fixtures/escript_utf8_test",
     EtcDir = filename:join(BaseDir, "etc"),
     LibDir = filename:join(BaseDir, "lib"),
