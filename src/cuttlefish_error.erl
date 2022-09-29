@@ -88,8 +88,8 @@ xlate({validator_parse, Term}) ->
       "Poorly formatted input to cuttlefish_validator:parse/1 : ~tp",
       [Term]
      );
-xlate({conf_to_latin1, LineNum}) ->
-    io_lib:format("Error converting value on line #~tp to latin1", [LineNum]);
+xlate({conf_to_unicode, LineNum}) ->
+    io_lib:format("Error converting value on line #~tp to unicode", [LineNum]);
 xlate({bytesize_parse, Value}) ->
     io_lib:format("Error converting value ~tp to a number of bytes", [Value]);
 xlate({file_open, {File, Reason}}) ->

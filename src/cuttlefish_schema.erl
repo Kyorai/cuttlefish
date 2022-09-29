@@ -121,15 +121,19 @@ count_mappings(Mappings) ->
 -spec file(string(), schema()) -> schema() | cuttlefish_error:errorlist().
 file(Filename, Schema) ->
     {ok, B, _} = erl_prim_loader:get_file(filename:absname(Filename)),
-    %% latin-1 is easier to support generically. We'll revisit utf-8
-    %% support in the future.
-    S = unicode:characters_to_list(B, latin1),
-    case string(S, Schema) of
-        {errorlist, Errors} ->
-            cuttlefish_error:print("Error parsing schema: ~ts", [Filename]),
-            {errorlist, Errors};
-        NewSchema ->
-            NewSchema
+    case unicode:characters_to_list(B) of
+        {incomplete, _List, _RestBin}=Error ->
+            {error, Error};
+        {error, _List, _RestData}=Error ->
+            {error, Error};
+        Chardata when is_list(Chardata)->
+            case string(Chardata, Schema) of
+                {errorlist, Errors} ->
+                    cuttlefish_error:print("Error parsing schema: ~ts", [Filename]),
+                    {errorlist, Errors};
+                NewSchema ->
+                    NewSchema
+            end
     end.
 
 %% @doc this exists so that we can create the fun using non exported
