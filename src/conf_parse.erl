@@ -79,6 +79,26 @@ unescape_dots([]) -> [];
 unescape_dots([C|Rest]) ->
     [C|unescape_dots(Rest)].
 
+try_unicode_characters_to_binary(Node, Idx) ->
+    case unicode:characters_to_binary(Node) of
+        {incomplete, _List, _RestBin} ->
+            throw({error, {conf_to_unicode, line(Idx)}});
+        {error, _List, _RestData} ->
+            throw({error, {conf_to_unicode, line(Idx)}});
+        Chardata when is_binary(Chardata)->
+            Chardata
+    end.
+
+try_unicode_characters_to_list(Node, Idx) ->
+    case unicode:characters_to_list(Node) of
+        {incomplete, _List, _RestBin} ->
+            throw({error, {conf_to_unicode, line(Idx)}});
+        {error, _List, _RestData} ->
+            throw({error, {conf_to_unicode, line(Idx)}});
+        Chardata when is_list(Chardata)->
+            Chardata
+    end.
+
 -ifdef(TEST).
 file_test() ->
     Conf = conf_parse:file("test/riak.conf"),
@@ -115,8 +135,15 @@ escaped_dots_are_removed_test() ->
     ok.
 
 utf8_test() ->
-    Actual = conf_parse:parse("setting = thing" ++ [338] ++ "\n"),
     Expected = [{["setting"], [116,104,105,110,103,338]}],
+    Actual = conf_parse:parse("setting = thing" ++ [338] ++ "\n"),
+    ?assertMatch(Expected, Actual),
+    ok.
+
+invalid_utf8_test() ->
+    InvalidCodePoint = 16#11FFFF,
+    Expected = {error, <<"setting = thing">>, [InvalidCodePoint, $\n]},
+    Actual = conf_parse:parse("setting = thing" ++ [InvalidCodePoint] ++ "\n"),
     ?assertMatch(Expected, Actual),
     ok.
 
@@ -154,7 +181,9 @@ parse(Input) when is_binary(Input) ->
              {AST, <<>>, _Index} -> AST;
              Any -> Any
            end,
-  release_memo(), Result.
+  release_memo(), Result;
+parse(Error) ->
+    Error.
 
 -spec 'config'(input(), index()) -> parse_result().
 'config'(Input, Index) ->
@@ -180,22 +209,15 @@ parse(Input) when is_binary(Input) ->
 
 -spec 'key'(input(), index()) -> parse_result().
 'key'(Input, Index) ->
-  p(Input, Index, 'key', fun(I,D) -> (p_seq([p_label('head', fun 'word'/2), p_label('tail', p_zero_or_more(p_seq([p_string(<<".">>), fun 'word'/2])))]))(I,D) end, fun(Node, _Idx) ->
+  p(Input, Index, 'key', fun(I,D) -> (p_seq([p_label('head', fun 'word'/2), p_label('tail', p_zero_or_more(p_seq([p_string(<<".">>), fun 'word'/2])))]))(I,D) end, fun(Node, Idx) ->
     [{head, H}, {tail, T}] = Node,
-    [unicode:characters_to_list(H)| [ unicode:characters_to_list(W) || [_, W] <- T]]
+    [try_unicode_characters_to_list(H, Idx)| [try_unicode_characters_to_list(W, Idx) || [_, W] <- T]]
  end).
 
 -spec 'value'(input(), index()) -> parse_result().
 'value'(Input, Index) ->
   p(Input, Index, 'value', fun(I,D) -> (p_one_or_more(p_seq([p_not(p_choose([p_seq([p_zero_or_more(fun 'ws'/2), fun 'crlf'/2]), fun 'comment'/2])), p_anything()])))(I,D) end, fun(Node, Idx) ->
-    case unicode:characters_to_list(Node) of
-        {incomplete, _List, _RestBin} ->
-            {error, {conf_to_unicode, line(Idx)}};
-        {error, _List, _RestData} ->
-            {error, {conf_to_unicode, line(Idx)}};
-        Chardata when is_list(Chardata)->
-            Chardata
-    end
+    try_unicode_characters_to_list(Node, Idx)
  end).
 
 -spec 'comment'(input(), index()) -> parse_result().
@@ -211,14 +233,14 @@ parse(Input) when is_binary(Input) ->
 
 -spec 'included_file_or_dir'(input(), index()) -> parse_result().
 'included_file_or_dir'(Input, Index) ->
-  p(Input, Index, 'included_file_or_dir', fun(I,D) -> (p_one_or_more(p_charclass(<<"[A-Za-z0-9-\_\.\*\\/]">>)))(I,D) end, fun(Node, _Idx) ->
-    unicode:characters_to_binary(Node)
+  p(Input, Index, 'included_file_or_dir', fun(I,D) -> (p_one_or_more(p_charclass(<<"[A-Za-z0-9-\_\.\*\\/]">>)))(I,D) end, fun(Node, Idx) ->
+    try_unicode_characters_to_binary(Node, Idx)
  end).
 
 -spec 'word'(input(), index()) -> parse_result().
 'word'(Input, Index) ->
-  p(Input, Index, 'word', fun(I,D) -> (p_one_or_more(p_choose([p_string(<<"\\.">>), p_charclass(<<"[A-Za-z0-9_-]">>)])))(I,D) end, fun(Node, _Idx) ->
-    unescape_dots(unicode:characters_to_list(Node))
+  p(Input, Index, 'word', fun(I,D) -> (p_one_or_more(p_choose([p_string(<<"\\.">>), p_charclass(<<"[A-Za-z0-9_-]">>)])))(I,D) end, fun(Node, Idx) ->
+    unescape_dots(try_unicode_characters_to_list(Node, Idx))
  end).
 
 -spec 'crlf'(input(), index()) -> parse_result().
