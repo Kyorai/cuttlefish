@@ -1,3 +1,4 @@
+.tool-versions
 .rebar3
 _build
 .DS_Store
