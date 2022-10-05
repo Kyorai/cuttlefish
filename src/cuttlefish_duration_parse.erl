@@ -53,7 +53,9 @@ parse(Input) when is_binary(Input) ->
              {AST, <<>>, _Index} -> AST;
              Any -> Any
            end,
-  release_memo(), Result.
+  release_memo(), Result;
+parse(Error) ->
+    Error.
 
 -spec 'duration'(input(), index()) -> parse_result().
 'duration'(Input, Index) ->
