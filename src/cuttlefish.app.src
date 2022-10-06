@@ -4,5 +4,5 @@
               {registered,[]},
               {applications,[kernel,stdlib]},
               {env,[]},
-              {licenses,["Apache"]},
+              {licenses,["Apache-2.0"]},
               {links,[{"GitHub","https://github.com/Kyorai/cuttlefish"}]}]}.
