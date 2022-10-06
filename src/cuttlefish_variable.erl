@@ -47,7 +47,7 @@
 %% Inverse of tokenize/1.
 -spec format(variable()) -> string().
 format(Key=[H|_]) when is_list(H) ->
-    Escaped = [re:replace(Word, "[.]", "\\\\&", [{return, list}, global]) || 
+    Escaped = [re:replace(Word, "[.]", "\\\\&", [unicode, {return, list}, global]) || 
                   Word <- Key],
     string:join(Escaped, ".").
 

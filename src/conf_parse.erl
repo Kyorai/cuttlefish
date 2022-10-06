@@ -60,7 +60,6 @@
 %% result of a successful parse.
 %% @end
 -define(line, true).
--define(FMT(F,A), lists:flatten(io_lib:format(F,A))).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -78,6 +77,26 @@ unescape_dots([$\\,$.|Rest]) ->
 unescape_dots([]) -> [];
 unescape_dots([C|Rest]) ->
     [C|unescape_dots(Rest)].
+
+try_unicode_characters_to_binary(Node, Idx) ->
+    case unicode:characters_to_binary(Node) of
+        {incomplete, _List, _RestBin} ->
+            throw({error, {conf_to_unicode, line(Idx)}});
+        {error, _List, _RestData} ->
+            throw({error, {conf_to_unicode, line(Idx)}});
+        Chardata when is_binary(Chardata)->
+            Chardata
+    end.
+
+try_unicode_characters_to_list(Node, Idx) ->
+    case unicode:characters_to_list(Node) of
+        {incomplete, _List, _RestBin} ->
+            throw({error, {conf_to_unicode, line(Idx)}});
+        {error, _List, _RestData} ->
+            throw({error, {conf_to_unicode, line(Idx)}});
+        Chardata when is_list(Chardata)->
+            Chardata
+    end.
 
 -ifdef(TEST).
 file_test() ->
@@ -115,10 +134,16 @@ escaped_dots_are_removed_test() ->
     ok.
 
 utf8_test() ->
-    Conf = conf_parse:parse("setting = thing" ++ [338] ++ "\n"),
-    ?assertEqual([{["setting"],
-            {error, {conf_to_latin1, 1}}
-        }], Conf),
+    Expected = [{["setting"], [116,104,105,110,103,338]}],
+    Actual = conf_parse:parse("setting = thing" ++ [338] ++ "\n"),
+    ?assertMatch(Expected, Actual),
+    ok.
+
+invalid_utf8_test() ->
+    InvalidCodePoint = 16#11FFFF,
+    Expected = {error, <<"setting = thing">>, [InvalidCodePoint, $\n]},
+    Actual = conf_parse:parse("setting = thing" ++ [InvalidCodePoint] ++ "\n"),
+    ?assertMatch(Expected, Actual),
     ok.
 
 gh_1_two_tab_test() ->
@@ -155,7 +180,9 @@ parse(Input) when is_binary(Input) ->
              {AST, <<>>, _Index} -> AST;
              Any -> Any
            end,
-  release_memo(), Result.
+  release_memo(), Result;
+parse(Error) ->
+    Error.
 
 -spec 'config'(input(), index()) -> parse_result().
 'config'(Input, Index) ->
@@ -181,20 +208,15 @@ parse(Input) when is_binary(Input) ->
 
 -spec 'key'(input(), index()) -> parse_result().
 'key'(Input, Index) ->
-  p(Input, Index, 'key', fun(I,D) -> (p_seq([p_label('head', fun 'word'/2), p_label('tail', p_zero_or_more(p_seq([p_string(<<".">>), fun 'word'/2])))]))(I,D) end, fun(Node, _Idx) ->
+  p(Input, Index, 'key', fun(I,D) -> (p_seq([p_label('head', fun 'word'/2), p_label('tail', p_zero_or_more(p_seq([p_string(<<".">>), fun 'word'/2])))]))(I,D) end, fun(Node, Idx) ->
     [{head, H}, {tail, T}] = Node,
-    [unicode:characters_to_list(H)| [ unicode:characters_to_list(W) || [_, W] <- T]]
+    [try_unicode_characters_to_list(H, Idx)| [try_unicode_characters_to_list(W, Idx) || [_, W] <- T]]
  end).
 
 -spec 'value'(input(), index()) -> parse_result().
 'value'(Input, Index) ->
   p(Input, Index, 'value', fun(I,D) -> (p_one_or_more(p_seq([p_not(p_choose([p_seq([p_zero_or_more(fun 'ws'/2), fun 'crlf'/2]), fun 'comment'/2])), p_anything()])))(I,D) end, fun(Node, Idx) ->
-    case unicode:characters_to_binary(Node, utf8, latin1) of
-        {_Status, _Begining, _Rest} ->
-            {error, {conf_to_latin1, line(Idx)}};
-        Bin ->
-            binary_to_list(Bin)
-    end
+    try_unicode_characters_to_list(Node, Idx)
  end).
 
 -spec 'comment'(input(), index()) -> parse_result().
@@ -210,14 +232,14 @@ parse(Input) when is_binary(Input) ->
 
 -spec 'included_file_or_dir'(input(), index()) -> parse_result().
 'included_file_or_dir'(Input, Index) ->
-  p(Input, Index, 'included_file_or_dir', fun(I,D) -> (p_one_or_more(p_charclass(<<"[A-Za-z0-9-\_\.\*\\/]">>)))(I,D) end, fun(Node, _Idx) ->
-    unicode:characters_to_binary(Node, utf8, latin1)
+  p(Input, Index, 'included_file_or_dir', fun(I,D) -> (p_one_or_more(p_charclass(<<"[A-Za-z0-9-\_\.\*\\/]">>)))(I,D) end, fun(Node, Idx) ->
+    try_unicode_characters_to_binary(Node, Idx)
  end).
 
 -spec 'word'(input(), index()) -> parse_result().
 'word'(Input, Index) ->
-  p(Input, Index, 'word', fun(I,D) -> (p_one_or_more(p_choose([p_string(<<"\\.">>), p_charclass(<<"[A-Za-z0-9_-]">>)])))(I,D) end, fun(Node, _Idx) ->
-    unescape_dots(unicode:characters_to_list(Node))
+  p(Input, Index, 'word', fun(I,D) -> (p_one_or_more(p_choose([p_string(<<"\\.">>), p_charclass(<<"[A-Za-z0-9_-]">>)])))(I,D) end, fun(Node, Idx) ->
+    unescape_dots(try_unicode_characters_to_list(Node, Idx))
  end).
 
 -spec 'crlf'(input(), index()) -> parse_result().

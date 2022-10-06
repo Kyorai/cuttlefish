@@ -49,20 +49,20 @@ build(Conf, {_Translations, Mappings, _Validators} = _Schema, AdvConfig) ->
                     KeysToHateOn
                     ),
 
-            Line = try ?FMT("~s = ~s", [Variable, Value]) of
+            Line = try ?FMT("~ts = ~ts", [Variable, Value]) of
                 X -> X
             catch
                 _:_ ->
                     %% I hate that I had to do this, 'cause you know...
                     %% Erlang and Strings, but actually this is ok because
                     %% sometimes there are going to be weird tuply things
-                    %% in here, so always good to fall back on ~p.
+                    %% in here, so always good to fall back on ~tp.
                     %% honestly, I think this try should be built into io:format
-                    ?FMT("~s = ~p", [Variable, Value])
+                    ?FMT("~ts = ~tp", [Variable, Value])
             end,
             case IsHater of
                 true ->
-                    [?FMT("## ~s was overridden in advanced.config", [Variable]),
+                    [?FMT("## ~ts was overridden in advanced.config", [Variable]),
                      "## " ++ Line] ++ Acc;
                 _ -> [Line | Acc]
             end
@@ -84,7 +84,7 @@ build(Conf, {_Translations, Mappings, _Validators} = _Schema, AdvConfig) ->
     end.
 
 advanced_as_comment(AdvConfig) ->
-    Str = lists:flatten(io_lib:format("~p", [AdvConfig])),
+    Str = lists:flatten(io_lib:format("~tp", [AdvConfig])),
     [ "## " ++ L || L <- string:tokens(Str, "$\n")].
 
 %% @doc checks a mapping's "mapping" is in the set of kvc paths in

@@ -121,15 +121,19 @@ count_mappings(Mappings) ->
 -spec file(string(), schema()) -> schema() | cuttlefish_error:errorlist().
 file(Filename, Schema) ->
     {ok, B, _} = erl_prim_loader:get_file(filename:absname(Filename)),
-    %% latin-1 is easier to support generically. We'll revisit utf-8
-    %% support in the future.
-    S = unicode:characters_to_list(B, latin1),
-    case string(S, Schema) of
-        {errorlist, Errors} ->
-            cuttlefish_error:print("Error parsing schema: ~s", [Filename]),
-            {errorlist, Errors};
-        NewSchema ->
-            NewSchema
+    case unicode:characters_to_list(B) of
+        {incomplete, _List, _RestBin}=Error ->
+            {error, Error};
+        {error, _List, _RestData}=Error ->
+            {error, Error};
+        Chardata when is_list(Chardata)->
+            case string(Chardata, Schema) of
+                {errorlist, Errors} ->
+                    cuttlefish_error:print("Error parsing schema: ~ts", [Filename]),
+                    {errorlist, Errors};
+                NewSchema ->
+                    NewSchema
+            end
     end.
 
 %% @doc this exists so that we can create the fun using non exported
@@ -228,7 +232,7 @@ parse(Scanned) ->
         {error, {_Line, erl_parse, [H|_T]=Strings}} when is_list(H) ->
             {error, {erl_parse, lists:flatten(Strings)}};
         {error, {_Line, erl_parse, Term}} ->
-            {error, {erl_parse, io_lib:format("~p", [Term])}};
+            {error, {erl_parse, io_lib:format("~tp", [Term])}};
         E ->
             {error, {erl_parse_unexpected, E}}
     end.
@@ -388,7 +392,7 @@ files_test() ->
     [M1, M2, M3, M4, M5, M6] = Mappings,
 
     %% Check mappings in correct order
-    io:format("~p", [Mappings]),
+    io:format("~tp", [Mappings]),
     ?assertEqual(["top_level", "var1"], cuttlefish_mapping:variable(M1)),
     ?assertEqual(["a", "some", "var1"], cuttlefish_mapping:variable(M2)),
     ?assertEqual(["a", "some", "var2"], cuttlefish_mapping:variable(M3)),
@@ -486,7 +490,7 @@ strings_filtration_test() ->
 
 error_test() ->
     {ErrorAtom, Errors} = strings(["tyktorp"]),
-    io:format("~p", [Errors]),
+    io:format("~tp", [Errors]),
     ?assertEqual(errorlist, ErrorAtom),
 
     {errorlist, [{error, Error}]} = strings(["{mapping, \"a\", [{datatype, unsupported_datatype}]}."]),

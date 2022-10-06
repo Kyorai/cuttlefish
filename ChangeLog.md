@@ -1,9 +1,10 @@
 # Cuttlefish Change Log
 
-## Next version (in development)
+## 3.1.0 (Oct 31, 2022)
 
-No changes yet.
+### Support Unicode
 
+GitHub pull request: [#31](https://github.com/Kyorai/cuttlefish/pull/31)
 
 ## 3.0.1 (Mar 26, 2021)
 

@@ -103,7 +103,7 @@ fold_conf_files(Filename, Conf0) ->
 
 expand_values(Filename, Conf) ->
     lists:map(fun({K, Value0}) ->
-                case re:run(Value0, "^\\$\\(\\<(.+)\\)$", [{capture, all_but_first, list}]) of
+                case re:run(Value0, "^\\$\\(\\<(.+)\\)$", [unicode, {capture, all_but_first, list}]) of
                     {match, [IncludeFilename0]} ->
                         % This is a value of the format "$(<IncludeFilename)", let's read the contents
                         % of `IncludeFilename` and use that as the new value
@@ -111,11 +111,11 @@ expand_values(Filename, Conf) ->
                         % strip all space chars from beginning/end and join the relative filename with the
                         % location of the sourcing .conf file
                         IncludeFilename = filename:join([filename:dirname(Filename),
-                                                         re:replace(IncludeFilename0, "(^\\s+)|(\\s+$)", "", [{return, list}])]),
+                                                         re:replace(IncludeFilename0, "(^\\s+)|(\\s+$)", "", [unicode, {return, list}])]),
                         % read the entire file contents and strip newline
                         case file:read_file(IncludeFilename) of
                           {ok, Value} ->
-                            {K, re:replace(Value, "[\n\r]$", "", [{return, list}])};
+                            {K, re:replace(Value, "[\n\r]$", "", [unicode, {return, list}])};
                           {error, Reason} ->
                             throw({unable_to_open, IncludeFilename, Reason})
                         end;
@@ -139,7 +139,7 @@ generate_file(Mappings, Filename) ->
 
     {ok, S} = file:open(Filename, [write]),
     _ = [ begin
-          io:format(S, "~s~n", [lists:flatten(Line)])
+          io:format(S, "~ts~n", [lists:flatten(Line)])
       end || Line <- ConfFileLines],
     % add an include directive at the end that will allow
     % other conf files in `conf.d` and have them get picked up
@@ -170,7 +170,7 @@ generate_element(MappingRecord) ->
     case Level of
         basic -> ok;
         Level ->
-            _ = ?LOG_WARNING("{level, ~p} has been deprecated. Use 'hidden' or '{hidden, true}'", [Level])
+            _ = ?LOG_WARNING("{level, ~tp} has been deprecated. Use 'hidden' or '{hidden, true}'", [Level])
     end,
 
     case generate_element(Hidden, Level, Default, Commented) of
@@ -212,11 +212,11 @@ generate_comments(M) ->
     Default = case cuttlefish_mapping:default(M) of
                   undefined -> [];
                   Other ->
-                      [ "", ?FMT("Default: ~s", [cuttlefish_datatypes:to_string(Other, DefaultDT)]) ]
+                      [ "", ?FMT("Default: ~ts", [cuttlefish_datatypes:to_string(Other, DefaultDT)]) ]
               end,
 
     Datatypes = ["", "Acceptable values:" |
-                 [ ?FMT("  - ~s", [pretty_datatype(DT)])
+                 [ ?FMT("  - ~ts", [pretty_datatype(DT)])
                    || DT <- cuttlefish_mapping:datatype(M)]],
 
     Doc = DocString ++ Default ++ Datatypes,
@@ -233,7 +233,7 @@ pretty_datatype(bytesize) -> "a byte size with units, e.g. 10GB";
 pretty_datatype({integer, I}) -> "the integer " ++ integer_to_list(I);
 pretty_datatype({string, S}) -> "the text \"" ++ S ++ "\"";
 pretty_datatype({atom, A}) -> "the text \"" ++ atom_to_list(A) ++ "\"";
-pretty_datatype({ip, {IP, Port}}) -> ?FMT("the address ~s:~p", [IP, Port]);
+pretty_datatype({ip, {IP, Port}}) -> ?FMT("the address ~ts:~tp", [IP, Port]);
 pretty_datatype({{duration,_}, D}) -> "the time duration " ++ D;
 pretty_datatype({bytesize, B}) -> "the bytesize " ++ B;
 pretty_datatype(file) -> "the path to a file";
@@ -242,9 +242,9 @@ pretty_datatype({file, F}) -> "the file " ++ F;
 pretty_datatype({directory, D}) -> "the directory " ++ D;
 pretty_datatype(flag) -> "on or off";
 pretty_datatype({flag, On, Off}) when is_atom(On), is_atom(Off) ->
-    ?FMT("~p or ~p", [On, Off]);
+    ?FMT("~tp or ~tp", [On, Off]);
 pretty_datatype({flag, {On,_}, {Off,_}}) ->
-    ?FMT("~p or ~p", [On, Off]);
+    ?FMT("~tp or ~tp", [On, Off]);
 pretty_datatype(_) -> "text". %% string and atom
 
 remove_duplicates(Conf) ->

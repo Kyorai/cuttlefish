@@ -1,22 +1,44 @@
 -module(cuttlefish_escript_integration_tests).
 
--include_lib("kernel/include/logger.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 escript_utf8_test() ->
+    ExpectedSetting = "thingŒ",
+    ExpectedSetting2 = "C:\\ProgramData\\RabbitMQ Sérvér\\Евгений\\rabbitmq.conf",
+    ExpectedSetting3 = "ascii string",
+    Expected = [{setting3, ExpectedSetting3},
+                {setting2,ExpectedSetting2},
+                {setting, ExpectedSetting}],
+
+    ?debugFmt("ExpectedSetting ~tp~n", [ExpectedSetting]),
+    ?debugFmt("ExpectedSetting2 ~tp~n", [ExpectedSetting2]),
+
+    BaseDir = "test_fixtures/escript_utf8_test",
+    EtcDir = filename:join(BaseDir, "etc"),
+    LibDir = filename:join(BaseDir, "lib"),
+    ConfFile = filename:join(EtcDir, "utf8.conf"),
+    GeneratedConfigDir = filename:join(BaseDir, "generated.config"),
+
     _ = cuttlefish_test_logging:set_up(),
     _ = cuttlefish_test_logging:bounce(error),
 
-    ?assertThrow(stop_deactivate, cuttlefish_escript:main(
-              "-d test_fixtures/escript_utf8_test/generated.config "
-              "-s test_fixtures/escript_utf8_test/lib "
-              "-e test_fixtures/escript_utf8_test/etc "
-              "-c test_fixtures/escript_utf8_test/etc/utf8.conf generate"
-            )),
-    [Log] = cuttlefish_test_logging:get_logs(),
-    ?assertMatch({match, _}, re:run(Log, "utf8.conf: Error converting value on line #1 to latin1")),
-    ok.
+    %% Empty workspace
+    case file:list_dir(GeneratedConfigDir) of
+        {ok, FilenamesToDelete} ->
+            [ file:delete(filename:join([GeneratedConfigDir, F])) || F <- FilenamesToDelete ];
+        _ -> ok
+    end,
 
+    Args = io_lib:format("-d ~ts -s ~ts -e ~ts -c ~ts generate",
+                         [GeneratedConfigDir, LibDir, EtcDir, ConfFile]),
+    ok = cuttlefish_escript:main(Args),
+    [] = cuttlefish_test_logging:get_logs(),
+
+    [AppConfig0] = filelib:wildcard("app.*.config", GeneratedConfigDir),
+    AppConfig1 = filename:join(GeneratedConfigDir, AppConfig0),
+    {ok, [Actual]} = file:consult(AppConfig1),
+    ?assertMatch(Expected, Actual),
+    ok.
 
 advanced_config_format_test() ->
     _ = cuttlefish_test_logging:set_up(),
@@ -48,7 +70,7 @@ escript_prune(DashM, ExpectedMax) ->
 
     {_, _, T} = lists:foldl(
         fun(Counter, {PrevConfigs, PrevVMArgs, Tests}) ->
-            io:format("Running iteration: ~p", [Counter]),
+            io:format("Running iteration: ~tp", [Counter]),
             %% Timer to keep from generating more than one file per second
             timer:sleep(1100),
             cuttlefish_escript:main(

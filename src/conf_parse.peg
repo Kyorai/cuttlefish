@@ -64,17 +64,12 @@ setting <- ws* key ws* "=" ws* value ws* comment? %{
 %% A key is a series of dot-separated identifiers.
 key <- head:word tail:("." word)* %{
     [{head, H}, {tail, T}] = Node,
-    [unicode:characters_to_list(H)| [ unicode:characters_to_list(W) || [_, W] <- T]]
+    [try_unicode_characters_to_list(H, Idx)| [try_unicode_characters_to_list(W, Idx) || [_, W] <- T]]
 %};
 
 %% A value is any character, with trailing whitespace stripped.
 value <- (!((ws* crlf) / comment) .)+ %{
-    case unicode:characters_to_binary(Node, utf8, latin1) of
-        {_Status, _Begining, _Rest} ->
-            {error, {conf_to_latin1, line(Idx)}};
-        Bin ->
-            binary_to_list(Bin)
-    end
+    try_unicode_characters_to_list(Node, Idx)
 %};
 
 %% A comment is any line that begins with a # sign, leading whitespace
@@ -88,13 +83,13 @@ include <- ws* "include" ws* included_file_or_dir comment? %{
 %};
 
 included_file_or_dir <- [A-Za-z0-9-\_\.\*\/]+ %{
-    unicode:characters_to_binary(Node, utf8, latin1)
+    try_unicode_characters_to_binary(Node, Idx)
 %};
 
 %% A word is one or more of letters, numbers and dashes or
 %% underscores.
 word <- ("\\." / [A-Za-z0-9_-])+ %{
-    unescape_dots(unicode:characters_to_list(Node))
+    unescape_dots(try_unicode_characters_to_list(Node, Idx))
 %};
 
 %% An end-of-line is signified by a line-feed with an optional
@@ -155,7 +150,6 @@ ws <- [ \t]+ `ws`;
 %% result of a successful parse.
 %% @end
 -define(line, true).
--define(FMT(F,A), lists:flatten(io_lib:format(F,A))).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -173,6 +167,26 @@ unescape_dots([$\\,$.|Rest]) ->
 unescape_dots([]) -> [];
 unescape_dots([C|Rest]) ->
     [C|unescape_dots(Rest)].
+
+try_unicode_characters_to_binary(Node, Idx) ->
+    case unicode:characters_to_binary(Node) of
+        {incomplete, _List, _RestBin} ->
+            throw({error, {conf_to_unicode, line(Idx)}});
+        {error, _List, _RestData} ->
+            throw({error, {conf_to_unicode, line(Idx)}});
+        Chardata when is_binary(Chardata)->
+            Chardata
+    end.
+
+try_unicode_characters_to_list(Node, Idx) ->
+    case unicode:characters_to_list(Node) of
+        {incomplete, _List, _RestBin} ->
+            throw({error, {conf_to_unicode, line(Idx)}});
+        {error, _List, _RestData} ->
+            throw({error, {conf_to_unicode, line(Idx)}});
+        Chardata when is_list(Chardata)->
+            Chardata
+    end.
 
 -ifdef(TEST).
 file_test() ->
@@ -210,10 +224,16 @@ escaped_dots_are_removed_test() ->
     ok.
 
 utf8_test() ->
-    Conf = conf_parse:parse("setting = thing" ++ [338] ++ "\n"),
-    ?assertEqual([{["setting"],
-            {error, {conf_to_latin1, 1}}
-        }], Conf),
+    Expected = [{["setting"], [116,104,105,110,103,338]}],
+    Actual = conf_parse:parse("setting = thing" ++ [338] ++ "\n"),
+    ?assertMatch(Expected, Actual),
+    ok.
+
+invalid_utf8_test() ->
+    InvalidCodePoint = 16#11FFFF,
+    Expected = {error, <<"setting = thing">>, [InvalidCodePoint, $\n]},
+    Actual = conf_parse:parse("setting = thing" ++ [InvalidCodePoint] ++ "\n"),
+    ?assertMatch(Expected, Actual),
     ok.
 
 gh_1_two_tab_test() ->

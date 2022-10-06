@@ -12,10 +12,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        otp_version: [23, 24, '25.0']
+        otp_version: [23, 24, '25.1.1']
         os: [ubuntu-latest, windows-latest]
     env:
-      LATEST_OTP_RELEASE: '25.0'
+      LATEST_OTP_RELEASE: '25.1.1'
     steps:
       - uses: actions/checkout@v3
       - uses: erlef/setup-beam@v1
@@ -32,6 +32,10 @@ jobs:
       - name: Compile
         run: rebar3 compile
       - name: Test
+        run: rebar3 eunit --verbose
+      - name: Test (Unicode)
+        env:
+          ERL_FLAGS: "+pc unicode"
         run: rebar3 eunit --verbose
       - name: Dialyzer
         if: ${{ matrix.otp_version == env.LATEST_OTP_RELEASE && matrix.os == 'ubuntu-latest' }}

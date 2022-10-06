@@ -54,16 +54,16 @@ xlate({error, Details}) ->
 xlate({_Error, {error, NestedError}}) ->
     xlate(NestedError);
 xlate({type, {Value, Type}}) ->
-    io_lib:format("Tried to convert ~p but invalid datatype: ~p",
+    io_lib:format("Tried to convert ~tp but invalid datatype: ~tp",
                   [Value, Type]);
 xlate({range, {{Value, Type}, Range}}) ->
     [?STR(Value, Type), " can't be outside the range ", Range];
 xlate({conversion, {Value, Type}}) ->
-    io_lib:format("~p cannot be converted to a(n) ~s", [Value, Type]);
+    io_lib:format("~tp cannot be converted to a(n) ~ts", [Value, Type]);
 xlate({duration, Value}) ->
     io_lib:format("Invalid duration value: ~ts", [Value]);
 xlate({enum_name, {Value, EnumNames}}) ->
-    io_lib:format("~p is not a valid enum value, acceptable values are: ~ts",
+    io_lib:format("~tp is not a valid enum value, acceptable values are: ~ts",
                   [Value, string:join(EnumNames, ", ")]);
 xlate({enum_format, Value}) ->
     %% This collapses two different type of formatting errors into one
@@ -75,77 +75,77 @@ xlate({mapping_types, List}) ->
                   [string:join(List, ", ")]);
 xlate({mapping_parse, Term}) ->
     io_lib:format(
-        "Poorly formatted input to cuttlefish_mapping:parse/1 : ~p",
+        "Poorly formatted input to cuttlefish_mapping:parse/1 : ~tp",
         [Term]
      );
 xlate({translation_parse, Term}) ->
     io_lib:format(
-      "Poorly formatted input to cuttlefish_translation:parse/1 : ~p",
+      "Poorly formatted input to cuttlefish_translation:parse/1 : ~tp",
       [Term]
      );
 xlate({validator_parse, Term}) ->
     io_lib:format(
-      "Poorly formatted input to cuttlefish_validator:parse/1 : ~p",
+      "Poorly formatted input to cuttlefish_validator:parse/1 : ~tp",
       [Term]
      );
-xlate({conf_to_latin1, LineNum}) ->
-    io_lib:format("Error converting value on line #~p to latin1", [LineNum]);
+xlate({conf_to_unicode, LineNum}) ->
+    io_lib:format("Error converting value on line #~tp to unicode", [LineNum]);
 xlate({bytesize_parse, Value}) ->
-    io_lib:format("Error converting value ~p to a number of bytes", [Value]);
+    io_lib:format("Error converting value ~tp to a number of bytes", [Value]);
 xlate({file_open, {File, Reason}}) ->
-    io_lib:format("Could not open file (~s) for Reason ~s", [File, Reason]);
+    io_lib:format("Could not open file (~ts) for Reason ~ts", [File, Reason]);
 xlate({conf_syntax, {File, {Line, Col}}}) ->
-    io_lib:format("Syntax error in ~s after line ~p column ~p, "
+    io_lib:format("Syntax error in ~ts after line ~tp column ~tp, "
                   "parsing incomplete", [File, Line, Col]);
 xlate({in_file, {File, Error}}) ->
     [File, ": ", xlate(Error)];
 xlate({translation_missing_setting, {Translation, Setting}}) ->
-    io_lib:format("Translation for '~s' expected to find setting '~s' but was missing",
+    io_lib:format("Translation for '~ts' expected to find setting '~ts' but was missing",
                   [Translation, Setting]);
 xlate({translation_invalid_configuration, {Translation, Invalid}}) ->
-    io_lib:format("Translation for '~s' found invalid configuration: ~s",
+    io_lib:format("Translation for '~ts' found invalid configuration: ~ts",
                   [Translation, Invalid]);
 xlate({translation_unknown_error, {Translation, {Class, Error}}}) ->
-    io_lib:format("Error running translation for ~s, [~p, ~p]",
+    io_lib:format("Error running translation for ~ts, [~tp, ~tp]",
                   [Translation, Class, Error]);
 xlate({translation_arity, {Translation, Arity}}) ->
-    io_lib:format("~p is not a valid arity for translation fun() ~s."
+    io_lib:format("~tp is not a valid arity for translation fun() ~ts."
                   " Try 1 or 2", [Arity, Translation]);
 xlate({map_multiple_match, VariableDefinition}) ->
-    io_lib:format("~p has both a fuzzy and strict match", [VariableDefinition]);
+    io_lib:format("~tp has both a fuzzy and strict match", [VariableDefinition]);
 xlate({unknown_variable, Variable}) ->
     ["Conf file attempted to set unknown variable: ", Variable];
 xlate({unsupported_type, Type}) ->
-    io_lib:format("~p is not a supported datatype", [Type]);
+    io_lib:format("~tp is not a supported datatype", [Type]);
 xlate({transform_type, Type}) ->
     ["Error transforming datatype for: ", Type];
 xlate({transform_type_exception, {Type, {Class, Error}}}) ->
-    io_lib:format("Caught exception converting to ~p: ~p:~p",
+    io_lib:format("Caught exception converting to ~tp: ~tp:~tp",
                   [Type, Class, Error]);
 xlate({transform_type_unacceptable, {Value, BadValue}}) ->
-    io_lib:format("~p is not accepted value: ~p", [Value, BadValue]);
+    io_lib:format("~tp is not accepted value: ~tp", [Value, BadValue]);
 xlate({circular_rhs, History}) ->
-    io_lib:format("Circular RHS substitutions: ~p", [History]);
+    io_lib:format("Circular RHS substitutions: ~tp", [History]);
 xlate({substitution_missing_config, {Substitution, Variable}}) ->
-    io_lib:format("'~s' substitution requires a config variable '~s' to be set",
+    io_lib:format("'~ts' substitution requires a config variable '~ts' to be set",
                   [Substitution, Variable]);
 xlate({mapping_not_found, Variable}) ->
     [Variable, " not_found"];
 xlate({mapping_multiple, {Variable, {Hard, Fuzzy}}}) ->
-    io_lib:format("~p hard mappings and ~p fuzzy mappings found "
-                  "for ~s", [Hard, Fuzzy, Variable]);
+    io_lib:format("~tp hard mappings and ~tp fuzzy mappings found "
+                  "for ~ts", [Hard, Fuzzy, Variable]);
 xlate({validation, {Variable, Description}}) ->
     [Variable, " invalid, ", Description];
 xlate({erl_parse, {Reason, LineNo}}) ->
     ["Schema parse error near line number ", integer_to_list(LineNo),
      ": ", Reason];
 xlate({erl_parse, Reason}) ->
-    io_lib:format("Schema parse error: ~p", [Reason]);
+    io_lib:format("Schema parse error: ~tp", [Reason]);
 xlate({erl_parse_unexpected, Error}) ->
-    io_lib:format("Unexpected return from erl_parse:parse_exprs/1: ~p",
+    io_lib:format("Unexpected return from erl_parse:parse_exprs/1: ~tp",
                   [Error]);
 xlate({parse_schema, Value}) ->
-    io_lib:format("Unknown parse return: ~p", [Value]);
+    io_lib:format("Unknown parse return: ~tp", [Value]);
 xlate({erl_scan, LineNo}) ->
     ["Error scanning erlang near line ", integer_to_list(LineNo)].
 
@@ -180,9 +180,9 @@ print({error, ErrorTerm}) ->
     print(lists:flatten(xlate(ErrorTerm)));
 print(String) ->
     try
-        ?LOG_ERROR("~s", [String])
+        ?LOG_ERROR("~ts", [String])
     catch _:_:_ ->
-        io:format("~s~n", [String]),
+        io:format("~ts~n", [String]),
         ok
     end.
 
