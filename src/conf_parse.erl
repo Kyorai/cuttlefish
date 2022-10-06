@@ -60,7 +60,6 @@
 %% result of a successful parse.
 %% @end
 -define(line, true).
--define(FMT(F,A), lists:flatten(io_lib:format(F,A))).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
