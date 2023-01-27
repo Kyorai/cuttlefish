@@ -23,7 +23,7 @@ jobs:
           - otp_version: 23
             os: ubuntu-20.04
     env:
-      LATEST_OTP_RELEASE: '25'
+      LATEST_OTP_RELEASE: 25
     steps:
       - uses: actions/checkout@v3
       - uses: erlef/setup-beam@v1
@@ -36,7 +36,7 @@ jobs:
         if: ${{ matrix.otp_version == env.LATEST_OTP_RELEASE && startsWith(matrix.os, 'ubuntu') }}
         with:
           path: _build/*/rebar3_*_plt
-          key: "dialyzer-plt-cache-${{ steps.install-erlang.outputs.otp-version }}-${{ runner.os }}-${{ hashFiles('rebar.config*') }}-v0"
+          key: dialyzer-plt-cache-${{ steps.install-erlang.outputs.otp-version }}-${{ runner.os }}-${{ hashFiles('rebar.config*') }}-v0
       - name: Compile
         run: rebar3 compile
       - name: Test
