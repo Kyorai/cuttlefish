@@ -36,14 +36,14 @@ jobs:
         if: ${{ matrix.otp_version == env.LATEST_OTP_RELEASE && startsWith(matrix.os, 'ubuntu') }}
         with:
           path: _build/*/rebar3_*_plt
-          key: dialyzer-plt-cache-${{ steps.install-erlang.outputs.otp-version }}-${{ runner.os }}-${{ hashFiles("rebar.config*") }}-v0
+          key: "dialyzer-plt-cache-${{ steps.install-erlang.outputs.otp-version }}-${{ runner.os }}-${{ hashFiles('rebar.config*') }}-v0"
       - name: Compile
         run: rebar3 compile
       - name: Test
         run: rebar3 eunit --verbose
       - name: Test (Unicode)
         env:
-          ERL_FLAGS: "+pc unicode"
+          ERL_FLAGS: '+pc unicode'
         run: rebar3 eunit --verbose
       - name: Dialyzer
         if: ${{ matrix.otp_version == env.LATEST_OTP_RELEASE && startsWith(matrix.os, 'ubuntu') }}
