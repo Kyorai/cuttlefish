@@ -12,14 +12,18 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        otp_version: ["23", "24", "25.1.1"]
-        os:
-          # TODO: change to ubuntu-latest after OTP 23 is deprecated, see
-          # https://github.com/erlef/setup-beam#compatibility-between-operating-system-and-erlangotp
-          - ubuntu-20.04
-          - windows-latest
+        otp_version: ["23", "24", "25"]
+        os: [ubuntu-latest, windows-latest]
+        # OTP 23 does not run on ubuntu-latest (22.04), see
+        # https://github.com/erlef/setup-beam#compatibility-between-operating-system-and-erlangotp
+        exclude:
+          - otp_version: "23"
+            os: ubuntu-latest
+        include:
+          - otp_version: "23"
+            os: ubuntu-20.04
     env:
-      LATEST_OTP_RELEASE: "25.1.1"
+      LATEST_OTP_RELEASE: "25"
     steps:
       - uses: actions/checkout@v3
       - uses: erlef/setup-beam@v1
@@ -29,10 +33,10 @@ jobs:
           rebar3-version: "3.19"
       - name: Restore Dialyzer PLT files from cache
         uses: actions/cache@v3
-        if: ${{ matrix.otp_version == env.LATEST_OTP_RELEASE && startsWith(matrix.os, 'ubuntu') }}
+        if: ${{ matrix.otp_version == env.LATEST_OTP_RELEASE && startsWith(matrix.os, "ubuntu") }}
         with:
           path: _build/*/rebar3_*_plt
-          key: dialyzer-plt-cache-${{ steps.install-erlang.outputs.otp-version }}-${{ runner.os }}-${{ hashFiles('rebar.config*') }}-v0
+          key: dialyzer-plt-cache-${{ steps.install-erlang.outputs.otp-version }}-${{ runner.os }}-${{ hashFiles("rebar.config*") }}-v0
       - name: Compile
         run: rebar3 compile
       - name: Test
@@ -42,5 +46,5 @@ jobs:
           ERL_FLAGS: "+pc unicode"
         run: rebar3 eunit --verbose
       - name: Dialyzer
-        if: ${{ matrix.otp_version == env.LATEST_OTP_RELEASE && startsWith(matrix.os, 'ubuntu') }}
+        if: ${{ matrix.otp_version == env.LATEST_OTP_RELEASE && startsWith(matrix.os, "ubuntu") }}
         run: rebar3 dialyzer
