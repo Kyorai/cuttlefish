@@ -327,12 +327,11 @@ fqdn_conversions(String, _FQDNStr, _, undefined) ->
 fqdn_conversions(_String, FQDNStr, {match, _}, Port) ->
     {FQDNStr, Port}.
 
-uds_conversions(String, _UDSStr, nomatch, _Port) ->
+uds_conversions(String, _UDSStr, nomatch) ->
     {error, {conversion, {String, 'UDS'}}};
-uds_conversions(String, _UDSStr, _, undefined) ->
-    {error, {conversion, {String, 'UDS'}}};
-uds_conversions(_String, _UDSStr, {match, Path}, Port) ->
-    {local, Path, Port}.
+uds_conversions(_String, _UDSStr, {match, Path}) ->
+    %% port is always 0 for unix domain sockets
+    {local, Path, 0}.
 
 validate_uds(Str) ->
     case string:tokens(Str, ":") of
@@ -369,14 +368,13 @@ from_string_to_uds(String, {[], String}) ->
 from_string_to_uds(String, {UDSPlusColon, PortString}) ->
     %% Drop the trailing colon
     UDS = droplast(UDSPlusColon),
-    Port = port_to_integer(PortString),
 
     %% In most API functions where you can use this address family
     %% the port number must be 0.
     %% See: https://www.erlang.org/doc/man/inet.html#type-local_address
-    case Port of
+    case port_to_integer(PortString) of
         0 ->
-            uds_conversions(String, UDS, validate_uds(UDS), Port);
+            uds_conversions(String, UDS, validate_uds(UDS));
         _OtherPort ->
             {error, {conversion, {String, 'UDS'}}}
     end.
