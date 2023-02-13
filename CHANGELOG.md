@@ -1,5 +1,14 @@
 # Changelog
 
+## [v3.2.0](https://github.com/Kyorai/cuttlefish/tree/v3.2.0) (2023-02-13)
+
+[Full Changelog](https://github.com/Kyorai/cuttlefish/compare/v3.1.0...v3.2.0)
+
+**Merged pull requests:**
+
+- GHA updates [\#34](https://github.com/Kyorai/cuttlefish/pull/34) ([lukebakken](https://github.com/lukebakken))
+- Add new domain\_socket data type [\#33](https://github.com/Kyorai/cuttlefish/pull/33) ([codeadict](https://github.com/codeadict))
+
 ## [v3.1.0](https://github.com/Kyorai/cuttlefish/tree/v3.1.0) (2022-10-06)
 
 [Full Changelog](https://github.com/Kyorai/cuttlefish/compare/v3.0.1...v3.1.0)
