@@ -228,12 +228,15 @@ pretty_datatype(integer) -> "an integer";
 pretty_datatype({enum, L}) ->
     "one of: " ++ string:join([ atom_to_list(A) || A <- L], ", ");
 pretty_datatype(ip) -> "an IP/port pair, e.g. 127.0.0.1:10011";
+pretty_datatype(domain_socket) -> "a Unix Domain Socket, e.g. local:/var/run/app.sock:0";
 pretty_datatype({duration, _}) -> "a time duration with units, e.g. '10s' for 10 seconds";
 pretty_datatype(bytesize) -> "a byte size with units, e.g. 10GB";
 pretty_datatype({integer, I}) -> "the integer " ++ integer_to_list(I);
 pretty_datatype({string, S}) -> "the text \"" ++ S ++ "\"";
 pretty_datatype({atom, A}) -> "the text \"" ++ atom_to_list(A) ++ "\"";
 pretty_datatype({ip, {IP, Port}}) -> ?FMT("the address ~ts:~tp", [IP, Port]);
+pretty_datatype({domain_socket, {local, Path, Port}}) ->
+    ?FMT("the Unix Domain Socket ~ts:~tp", [Path, Port]);
 pretty_datatype({{duration,_}, D}) -> "the time duration " ++ D;
 pretty_datatype({bytesize, B}) -> "the bytesize " ++ B;
 pretty_datatype(file) -> "the path to a file";

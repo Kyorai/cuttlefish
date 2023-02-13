@@ -36,6 +36,7 @@
                     {enum, [atom()]} |
                     ip |
                     fqdn |
+                    domain_socket |
                     {duration, cuttlefish_duration:time_unit() } |
                     bytesize |
                     {percent, integer} |
@@ -48,6 +49,7 @@
                     { directory, file:filename() } |
                     { atom, atom() } |
                     { ip, { string(), integer() } } |
+                    { domain_socket, {string(), integer()} } |
                     { {duration, cuttlefish_duration:time_unit() }, string() } |
                     { bytesize, string() } |
                     { {percent, integer}, integer() } |
@@ -78,6 +80,7 @@ is_supported(atom) -> true;
 is_supported({enum, E}) when is_list(E) -> true;
 is_supported(ip) -> true;
 is_supported(fqdn) -> true;
+is_supported(domain_socket) -> true;
 is_supported({duration, f}) -> true;
 is_supported({duration, w}) -> true;
 is_supported({duration, d}) -> true;
@@ -106,6 +109,8 @@ is_extended({ip, {IP, Port}}) when is_list(IP) andalso is_integer(Port) -> true;
 is_extended({ip, StringIP}) when is_list(StringIP) -> true;
 is_extended({fqdn, {FQDN, Port}}) when is_list(FQDN) andalso is_integer(Port) -> true;
 is_extended({fqdn, StringFQDN}) when is_list(StringFQDN) -> true;
+is_extended({domain_socket, {local, UDS, Port}}) when is_list(UDS) andalso is_integer(Port) -> true;
+is_extended({domain_socket, StringUDS}) when is_list(StringUDS) -> true;
 is_extended({{duration, f}, D}) when is_list(D) -> true;
 is_extended({{duration, w}, D}) when is_list(D) -> true;
 is_extended({{duration, d}, D}) when is_list(D) -> true;
@@ -127,6 +132,7 @@ extended_from({file, _}) -> file;
 extended_from({directory, _}) -> directory;
 extended_from({ip, _}) -> ip;
 extended_from({fqdn, _}) -> fqdn;
+extended_from({domain_socket, _}) -> domain_socket;
 extended_from({{duration, Unit}, _}) -> {duration, Unit};
 extended_from({bytesize, _}) -> bytesize;
 extended_from({{percent, integer}, _}) -> {percent, integer};
@@ -162,6 +168,10 @@ to_string(IPString, ip) when is_list(IPString) -> IPString;
 
 to_string({FQDN, Port}, fqdn) when is_list(FQDN), is_integer(Port) -> FQDN ++ ":" ++ integer_to_list(Port);
 to_string(FQDNString, fqdn) when is_list(FQDNString) -> FQDNString;
+
+to_string({local, UDS, Port}, domain_socket) when is_list(UDS), is_integer(Port) ->
+    "local:" ++ UDS ++ ":" ++ integer_to_list(Port);
+to_string(UDSString, domain_socket) when is_list(UDSString) -> UDSString;
 
 to_string(Enum, {enum, _}) when is_list(Enum) -> Enum;
 to_string(Enum, {enum, _}) when is_atom(Enum) -> atom_to_list(Enum);
@@ -228,6 +238,10 @@ from_string(String, ip) when is_list(String) ->
 from_string({FQDN, Port}, fqdn) when is_list(FQDN), is_integer(Port) -> {FQDN, Port};
 from_string(String, fqdn) when is_list(String) ->
     from_string_to_fqdn(String, lists:split(string:rchr(String, $:), String));
+
+from_string({local, UDS, Port}, domain_socket) when is_list(UDS), is_integer(Port) -> {local, UDS, Port};
+from_string(String, domain_socket) when is_list(String) ->
+    from_string_to_uds(String, lists:split(string:rchr(String, $:), String));
 
 from_string(Duration, {duration, _}) when is_integer(Duration) -> Duration;
 from_string(Duration, {duration, Unit}) when is_list(Duration) -> cuttlefish_duration:parse(Duration, Unit);
@@ -313,6 +327,20 @@ fqdn_conversions(String, _FQDNStr, _, undefined) ->
 fqdn_conversions(_String, FQDNStr, {match, _}, Port) ->
     {FQDNStr, Port}.
 
+uds_conversions(String, _UDSStr, nomatch) ->
+    {error, {conversion, {String, 'UDS'}}};
+uds_conversions(_String, _UDSStr, {match, Path}) ->
+    %% port is always 0 for unix domain sockets
+    {local, Path, 0}.
+
+validate_uds(Str) ->
+    case string:tokens(Str, ":") of
+        [Pfx, Path] when Pfx =:= "local" orelse Pfx =:= "unix"  ->
+            {match, Path};
+        _ ->
+            nomatch
+    end.
+
 validate_fqdn(Str) ->
     %% inspired by https://regexr.com/3g5j0, amended to disallow [:space:]
     re:run(Str, "^(?!:\/\/)(?=[^[:space:]]{1,255}$)((.{1,63}\.){1,127}(?![0-9]*$)[a-z0-9-]+\.?)$", [unicode]).
@@ -335,6 +363,21 @@ from_string_to_fqdn(String, {FQDNPlusColon, PortString}) ->
     FQDN = droplast(FQDNPlusColon),
     fqdn_conversions(String, FQDN, validate_fqdn(FQDN), port_to_integer(PortString)).
 
+from_string_to_uds(String, {[], String}) ->
+    {error, {conversion, {String, 'UDS'}}};
+from_string_to_uds(String, {UDSPlusColon, PortString}) ->
+    %% Drop the trailing colon
+    UDS = droplast(UDSPlusColon),
+
+    %% In most API functions where you can use this address family
+    %% the port number must be 0.
+    %% See: https://www.erlang.org/doc/man/inet.html#type-local_address
+    case port_to_integer(PortString) of
+        0 ->
+            uds_conversions(String, UDS, validate_uds(UDS));
+        _OtherPort ->
+            {error, {conversion, {String, 'UDS'}}}
+    end.
 
 -ifdef(TEST).
 
@@ -391,6 +434,14 @@ to_string_extended_type_test() ->
     ?assertEqual("127.0.0.1:8098", to_string({"127.0.0.1", 8098}, {ip, {"127.0.0.1", 8098}})),
     ?assertEqual("example.com:8098", to_string("example.com:8098", {fqdn, "example.com:8098"})),
     ?assertEqual("example.com:8098", to_string({"example.com", 8098}, {fqdn, {"example.com", 8098}})),
+    ?assertEqual("local:/path/test.sock:0",
+                 to_string("local:/path/test.sock:0", {domain_socket, "local:/path/test.sock:0"})),
+    ?assertEqual("unix:/path/test.sock:0",
+                 to_string("unix:/path/test.sock:0", {domain_socket, "unix:/path/test.sock:0"})),
+    ?assertEqual("local:/path/test.sock:0",
+                 to_string({local, "/path/test.sock", 0}, {domain_socket, {local, "/path/test.sock", 0}})),
+    ?assertEqual("local:/path/test.sock:0",
+                 to_string({local, "/path/test.sock", 0}, {domain_socket, {local, "/path/test.sock", 0}})),
     ?assertEqual("string", to_string("string", {string, "string"})),
     ?assertEqual("1w", to_string("1w", {{duration, s}, "1w"})),
     ?assertEqual("1w", to_string(604800000, {{duration, ms}, "1w"})),
@@ -480,6 +531,29 @@ from_string_fqdn_test() ->
                   BadFQDNs),
     ok.
 
+from_string_domain_socket_test() ->
+    ?assertEqual({local, "/tmp/test.sock", 0}, from_string("local:/tmp/test.sock:0", domain_socket)),
+    ?assertEqual({local, "/tmp/test.sock", 0}, from_string("unix:/tmp/test.sock:0", domain_socket)),
+    ?assertEqual({local, "test.sock", 0}, from_string("local:test.sock:0", domain_socket)),
+    ?assertEqual({local, "/run/不亦樂乎.sock", 0}, from_string("local:/run/不亦樂乎.sock:0", domain_socket)),
+
+    BadUDSs = [
+            "local:/tmp/test.sock", %% No port
+            "local:/tmp/test.sock:80", %% Non 0 port
+            "/tmp/test.sock", %% No local prefix
+            "",
+            "local:/tmp/test.sock:foo", %% invalid port
+            "local:/tmp/test.sock:0:0", %% double port
+            "prefix:foo.sock:0" %% Bad prefix
+            ],
+
+    lists:foreach(fun(Bad) ->
+                          ?assertEqual({error, {conversion, {Bad, 'UDS'}}},
+                                       from_string(Bad, domain_socket))
+                  end,
+                  BadUDSs),
+    ok.
+
 from_string_enum_test() ->
     ?assertEqual("\"a\" is not a valid enum value, acceptable values are: b, c", ?XLATE(from_string(a, {enum, [b, c]}))),
     ?assertEqual(true, from_string("true", {enum, [true, false]})),
@@ -567,6 +641,7 @@ is_supported_test() ->
     ?assert(is_supported({duration, s})),
     ?assert(is_supported({duration, ms})),
     ?assert(is_supported(bytesize)),
+    ?assert(is_supported(domain_socket)),
     ?assert(is_supported({list, string})),
     ?assert(not(is_supported({list, {list, string}}))),
     ?assert(not(is_supported(some_unsupported_type))),
@@ -596,6 +671,11 @@ is_extended_test() ->
     ?assertEqual(true, is_extended({ip, {"1.2.3.4", 1234}})),
     ?assertEqual(false, is_extended({ip, {1234, 1234}})),
     ?assertEqual(false, is_extended({ip, {"1.2.3.4", "1234"}})),
+
+    ?assertEqual(true, is_extended({domain_socket, {local, "test.sock", 1234}})),
+    ?assertEqual(false, is_extended({domain_socket, {local, "test.sock", "1234"}})),
+    ?assertEqual(false, is_extended({domain_socket, {local, 1234, 1234}})),
+    ?assertEqual(false, is_extended({domain_socket, {local, "foo"}})),
 
     ?assertEqual(true, is_extended({{duration, f}, "10f"})),
     ?assertEqual(true, is_extended({{duration, w}, "10f"})),
