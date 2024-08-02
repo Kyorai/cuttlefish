@@ -1,0 +1,7 @@
+{mapping, "example1.ab", "example1.ab", [
+  {datatype, [string]}
+]}.
+
+{mapping, "example1.cd", "example1.cd", [
+  {datatype, [string]}
+]}.
