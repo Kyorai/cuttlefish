@@ -2,10 +2,10 @@ name: CI
 on:
   pull_request:
     branches:
-      - 'master'
+      - 'main'
   push:
     branches:
-      - 'master'
+      - 'main'
 jobs:
   build-test:
     name: Build and test on Erlang/OTP ${{ matrix.otp_version }} and ${{ matrix.os }}
