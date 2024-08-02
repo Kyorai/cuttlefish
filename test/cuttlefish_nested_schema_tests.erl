@@ -1,4 +1,4 @@
--module(cuttlefish_nested_schema_test).
+-module(cuttlefish_nested_schema_tests).
 
 -include_lib("eunit/include/eunit.hrl").
 

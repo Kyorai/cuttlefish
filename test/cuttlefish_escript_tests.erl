@@ -1,4 +1,4 @@
--module(cuttlefish_escript_test).
+-module(cuttlefish_escript_tests).
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 
