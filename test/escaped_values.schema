@@ -1,0 +1,7 @@
+{mapping, "escaped.value", "escaped.value", [
+  {datatype, [string]}
+]}.
+
+{mapping, "non_escaped.value", "non_escaped.value", [
+  {datatype, [string]}
+]}.

@@ -56,9 +56,9 @@ line <- ((setting / include / comment / ws+) (crlf / eof)) / crlf %{
 
 %% A setting is a key and a value, joined by =, with surrounding
 %% whitespace ignored.
-setting <- ws* key ws* "=" ws* value ws* comment? %{
+setting <- ws* key ws* "=" ws* (escaped_value / unescaped_value) ws* comment? %{
     [ _, Key, _, _Eq, _, Value, _, _ ] = Node,
-    {Key, Value}
+    {Key, try_unicode_characters_to_list(Value, Idx)}
 %};
 
 %% A key is a series of dot-separated identifiers.
@@ -67,8 +67,14 @@ key <- head:word tail:("." word)* %{
     [try_unicode_characters_to_list(H, Idx)| [try_unicode_characters_to_list(W, Idx) || [_, W] <- T]]
 %};
 
+%% An escaped value is any character between single quotes except for EOF
+escaped_value <- "'" (!"'" .)* "'" %{
+    Stripped = string:trim(Node, both, [$']),
+    try_unicode_characters_to_list(Stripped, Idx)
+%};
+
 %% A value is any character, with trailing whitespace stripped.
-value <- (!((ws* crlf) / comment) .)+ %{
+unescaped_value <- (!((ws* crlf) / comment) .)+ %{
     try_unicode_characters_to_list(Node, Idx)
 %};
 
@@ -229,10 +235,19 @@ utf8_test() ->
     ?assertMatch(Expected, Actual),
     ok.
 
-invalid_utf8_test() ->
-    InvalidCodePoint = 16#11FFFF,
-    Expected = {error, <<"setting = thing">>, [InvalidCodePoint, $\n]},
-    Actual = conf_parse:parse("setting = thing" ++ [InvalidCodePoint] ++ "\n"),
+invalid_included_file_test() ->
+    Conf = conf_parse:file("test/invalid_include_file.conf"),
+    ?assertMatch({[], _PathWithNewLineAndCarriage, {{line,_}, {column, _}}}, Conf),
+    ok.
+
+invalid_included_dir_test() ->
+    Conf = conf_parse:file("test/invalid_include_dir.conf"),
+    ?assertMatch({[], _PathWithNewLineAndCarriage, {{line, _},{column, _}}}, Conf),
+    ok.
+
+escaped_string_test() ->
+    Expected = [{["setting"],"e9238-7_49%#sod7"}],
+    Actual = conf_parse:parse("setting = 'e9238-7_49%#sod7'" ++ "\n"),
     ?assertMatch(Expected, Actual),
     ok.
 
