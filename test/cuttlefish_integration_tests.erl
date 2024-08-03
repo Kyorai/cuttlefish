@@ -174,6 +174,13 @@ duration_test() ->
     ErrConfig = cuttlefish_generator:map(Schema, Conf2),
     ?assertMatch({error, transform_datatypes, _}, ErrConfig).
 
+tagged_string_test() ->
+    Schema = cuttlefish_schema:files(["test/tagged_string.schema"]),
+
+    Conf = conf_parse:parse(<<"tagged_key = tagged:e614d97599dab483f\n">>),
+    NewConfig = cuttlefish_generator:map(Schema, Conf),
+    ?assertEqual({tagged, "e614d97599dab483f"}, proplists:get_value(tagged_key, proplists:get_value(cuttlefish, NewConfig))).
+
 proplist_equals(Expected, Actual) ->
     ExpectedKeys = lists:sort(proplists:get_keys(Expected)),
     ActualKeys = lists:sort(proplists:get_keys(Actual)),

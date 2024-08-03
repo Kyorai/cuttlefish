@@ -42,6 +42,7 @@
                     {percent, integer} |
                     {percent, float} |
                     float |
+                    tagged_string |
                     {list, datatype()}.
 -type extended() :: { integer, integer() } |
                     { string, string() } |
@@ -54,7 +55,8 @@
                     { bytesize, string() } |
                     { {percent, integer}, integer() } |
                     { {percent, float}, float() } |
-                    { float, float() }.
+                    { float, float() } |
+                    { tagged_string, string() }.
 -type datatype_list() :: [ datatype() | extended() ].
 
 -export_type([datatype/0, extended/0, datatype_list/0]).
@@ -92,6 +94,7 @@ is_supported(bytesize) -> true;
 is_supported({percent, integer}) -> true;
 is_supported({percent, float}) -> true;
 is_supported(float) -> true;
+is_supported(tagged_string) -> true;
 is_supported({list, {list, _}}) ->
     % lists of lists are not supported
     false;
@@ -102,6 +105,7 @@ is_supported(_) -> false.
 -spec is_extended(any()) -> boolean().
 is_extended({integer, I}) when is_integer(I) -> true;
 is_extended({string, S}) when is_list(S) -> true;
+is_extended({tagged_string, S}) when is_list(S) -> true;
 is_extended({atom, A}) when is_atom(A) -> true;
 is_extended({file, F}) when is_list(F) -> true;
 is_extended({directory, D}) when is_list(D) -> true;
@@ -127,6 +131,7 @@ is_extended(_) -> false.
 -spec extended_from(extended()) -> datatype().
 extended_from({integer, _}) -> integer;
 extended_from({string, _}) -> string;
+extended_from({tagged_string, _}) -> tagged_string;
 extended_from({atom, _}) -> atom;
 extended_from({file, _}) -> file;
 extended_from({directory, _}) -> directory;
@@ -184,6 +189,8 @@ to_string(Bytesize, bytesize) when is_integer(Bytesize) -> cuttlefish_bytesize:t
 
 to_string(String, string) when is_list(String) -> String;
 
+to_string({Tag, String}, tagged_string) when is_list(Tag), is_list(String) -> Tag ++ ":" ++ String;
+
 to_string(File, file) when is_list(File) -> File;
 
 to_string(Directory, directory) when is_list(Directory) -> Directory;
@@ -238,6 +245,9 @@ from_string(String, ip) when is_list(String) ->
 from_string({FQDN, Port}, fqdn) when is_list(FQDN), is_integer(Port) -> {FQDN, Port};
 from_string(String, fqdn) when is_list(String) ->
     from_string_to_fqdn(String, lists:split(string:rchr(String, $:), String));
+
+from_string(String, tagged_string) when is_list(String) ->
+    from_string_to_tagged_string(String, lists:split(string:rchr(String, $:), String));
 
 from_string({local, UDS, Port}, domain_socket) when is_list(UDS), is_integer(Port) -> {local, UDS, Port};
 from_string(String, domain_socket) when is_list(String) ->
@@ -362,6 +372,14 @@ from_string_to_fqdn(String, {[], String}) ->
 from_string_to_fqdn(String, {FQDNPlusColon, PortString}) ->
     FQDN = droplast(FQDNPlusColon),
     fqdn_conversions(String, FQDN, validate_fqdn(FQDN), port_to_integer(PortString)).
+
+from_string_to_tagged_string(String, {[], String}) ->
+    %% does not follow the tag:value format convention
+    {error, {conversion, {String, "tagged string"}}};
+from_string_to_tagged_string(_String, {TagPlusColon, TaggedValue}) ->
+    %% Drop the trailing colon from the tag
+    Tag = droplast(TagPlusColon),
+    {list_to_atom(Tag), TaggedValue}.
 
 from_string_to_uds(String, {[], String}) ->
     {error, {conversion, {String, 'UDS'}}};
@@ -642,6 +660,7 @@ is_supported_test() ->
     ?assert(is_supported({duration, ms})),
     ?assert(is_supported(bytesize)),
     ?assert(is_supported(domain_socket)),
+    ?assert(is_supported(tagged_string)),
     ?assert(is_supported({list, string})),
     ?assert(not(is_supported({list, {list, string}}))),
     ?assert(not(is_supported(some_unsupported_type))),
@@ -691,6 +710,9 @@ is_extended_test() ->
     ?assertEqual(true, is_extended({{percent, float}, "10%"})),
     ?assertEqual(true, is_extended({{percent, float}, 0.1})),
     ?assertEqual(true, is_extended({float, 0.1})),
+
+    ?assertEqual(true, is_extended({tagged_string, "tag:value"})),
+
     ok.
 
 -endif.

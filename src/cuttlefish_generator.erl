@@ -559,7 +559,8 @@ transform_supported_type(DT, Value) ->
         {error, Message} -> {error, Message};
         NewValue -> {ok, NewValue}
     catch
-        Class:Error ->
+        Class:Error:_Stacktrace ->
+            %% io:format("Failed to transform a type. Stacktrace: ~p~n", [Stacktrace]),
             {error, {transform_type_exception, {DT, {Class, Error}}}}
     end.
 
