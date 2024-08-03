@@ -102,17 +102,32 @@ https://github.com/basho/cuttlefish/wiki/Cuttlefish-for-Application-Users
 
 ## What's it look like to application packagers?
 
-* [node_package](https://github.com/basho/cuttlefish/wiki/Cuttlefish-for-node_package-users)
-* [non node_package](https://github.com/basho/cuttlefish/wiki/Cuttlefish-for-non-node_package-users)
+* [node_package](https://github.com/Kyorai/cuttlefish/wiki/Cuttlefish-for-node_package-users)
+* [non node_package](https://github.com/Kyorai/cuttlefish/wiki/Cuttlefish-for-non-node_package-users)
+
 
 ## Current Status
 
 Cuttlefish is ready for production deployments.
 
+
 ## Re-generating parser
 
-```
-rebar3 as dev neotoma
+After using Neotoma Rebar3 plugin to re-generate conf_parse.erl, you **MUST**
+edit that file to change the exported `file/1` function to this code:
+
+``` erl
+-spec file(file:name()) -> any().
+file(Filename) ->
+     AbsFilename = filename:absname(Filename),
+     case erl_prim_loader:get_file(AbsFilename) of
+         {ok, Bin, _} -> parse(Bin);
+         error -> {error, undefined}
+     end.
 ```
 
-Please see the *NOTE* in `src/conf_parse.peg` as well.
+To regenerate the parser from the PEG grammar:
+
+```
+rebar3 as dev neotoma compile
+```

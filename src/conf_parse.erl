@@ -126,6 +126,16 @@ included_dir_test() ->
         ], Conf),
     ok.
 
+invalid_included_file_test() ->
+  Conf = conf_parse:file("test/invalid_include_file.conf"),
+  ?assertMatch({[], <<"includeriak.conf\n\n">>, {{line,_}, {column, _}}}, Conf),
+  ok.
+
+invalid_included_dir_test() ->
+  Conf = conf_parse:file("test/invalid_include_dir.conf"),
+  ?assertMatch({[], <<"includeconf.d/*.conf\n">>, {{line, _},{column, _}}}, Conf),
+  ok.
+
 escaped_dots_are_removed_test() ->
     Conf = conf_parse:parse("#comment\nsetting\\.0 = thing0\n"),
     ?assertEqual([
@@ -225,7 +235,7 @@ parse(Error) ->
 
 -spec 'include'(input(), index()) -> parse_result().
 'include'(Input, Index) ->
-  p(Input, Index, 'include', fun(I,D) -> (p_seq([p_zero_or_more(fun 'ws'/2), p_string(<<"include">>), p_zero_or_more(fun 'ws'/2), fun 'included_file_or_dir'/2, p_optional(fun 'comment'/2)]))(I,D) end, fun(Node, _Idx) ->
+  p(Input, Index, 'include', fun(I,D) -> (p_seq([p_zero_or_more(fun 'ws'/2), p_string(<<"include">>), p_one_or_more(fun 'ws'/2), fun 'included_file_or_dir'/2, p_optional(fun 'comment'/2)]))(I,D) end, fun(Node, _Idx) ->
     [_, _Include, _, Included, _] = Node,
     {include, Included}
  end).
