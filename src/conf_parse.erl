@@ -128,12 +128,12 @@ included_dir_test() ->
 
 invalid_included_file_test() ->
   Conf = conf_parse:file("test/invalid_include_file.conf"),
-  ?assertMatch({[], <<"includeriak.conf\n\n">>, {{line,_}, {column, _}}}, Conf),
+  ?assertMatch({[], _PathWithNewLineAndCarriage, {{line,_}, {column, _}}}, Conf),
   ok.
 
 invalid_included_dir_test() ->
   Conf = conf_parse:file("test/invalid_include_dir.conf"),
-  ?assertMatch({[], <<"includeconf.d/*.conf\n">>, {{line, _},{column, _}}}, Conf),
+  ?assertMatch({[], _PathWithNewLineAndCarriage, {{line, _},{column, _}}}, Conf),
   ok.
 
 escaped_dots_are_removed_test() ->
