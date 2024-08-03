@@ -77,7 +77,7 @@ value <- (!((ws* crlf) / comment) .)+ %{
 comment <- ws* "#" (!crlf .)* `comment`;
 
 %% An include is a line that begins with 'include' and something.
-include <- ws* "include" ws* included_file_or_dir comment? %{
+include <- ws* "include" ws+ included_file_or_dir comment? %{
     [_, _Include, _, Included, _] = Node,
     {include, Included}
 %};
