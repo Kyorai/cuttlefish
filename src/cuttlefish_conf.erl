@@ -233,6 +233,7 @@ pretty_datatype({duration, _}) -> "a time duration with units, e.g. '10s' for 10
 pretty_datatype(bytesize) -> "a byte size with units, e.g. 10GB";
 pretty_datatype({integer, I}) -> "the integer " ++ integer_to_list(I);
 pretty_datatype({string, S}) -> "the text \"" ++ S ++ "\"";
+pretty_datatype({tagged_string, {Tag, String}}) -> "the text \"" ++ String ++ "\"" ++ " tagged as \"" ++ Tag ++ "\"";
 pretty_datatype({atom, A}) -> "the text \"" ++ atom_to_list(A) ++ "\"";
 pretty_datatype({ip, {IP, Port}}) -> ?FMT("the address ~ts:~tp", [IP, Port]);
 pretty_datatype({domain_socket, {local, Path, Port}}) ->

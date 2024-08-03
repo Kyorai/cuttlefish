@@ -1,0 +1,3 @@
+{mapping, "tagged_key", "cuttlefish.tagged_key", [
+  {datatype, [tagged_string]}
+]}.
