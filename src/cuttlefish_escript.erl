@@ -77,7 +77,7 @@ parse_and_command(Args) ->
 main(Args) ->
     {Command, ParsedArgs, Extra} = parse_and_command(Args),
 
-    SuggestedLogLevel = list_to_atom(proplists:get_value(log_level, ParsedArgs)),
+    SuggestedLogLevel = list_to_atom(proplists:get_value(log_level, ParsedArgs, "notice")),
     LogLevel = case lists:member(SuggestedLogLevel, [debug, info, notice, warning, error, critical, alert, emergency]) of
         true -> SuggestedLogLevel;
         _ -> notice
