@@ -181,6 +181,27 @@ tagged_string_test() ->
     NewConfig = cuttlefish_generator:map(Schema, Conf),
     ?assertEqual({tagged, "e614d97599dab483f"}, proplists:get_value(tagged_key, proplists:get_value(cuttlefish, NewConfig))).
 
+escaped_value_case1_test() ->
+    Schema = cuttlefish_schema:files(["test/escaped_values.schema"]),
+
+    Conf1 = conf_parse:parse("escaped.value = 'e9238-7_49%#sod7'\n"),
+    Config1 = cuttlefish_generator:map(Schema, Conf1),
+    %% with escaping, the '#' character and everything that follows it is preserved
+    ?assertEqual("e9238-7_49%#sod7", proplists:get_value(value, proplists:get_value(escaped, Config1))),
+
+    Conf2 = conf_parse:parse(<<"non_escaped.value = 557sd79238749%#sod7f9s87ee4\n">>),
+    Config2 = cuttlefish_generator:map(Schema, Conf2),
+    %% without escaping, everything after the '#' is cut off
+    ?assertEqual("557sd79238749%", proplists:get_value(value, proplists:get_value(non_escaped, Config2))).
+
+escaped_value_case2_test() ->
+    Schema = cuttlefish_schema:files(["test/escaped_values.schema"]),
+
+    %% characters that may appear in machine-generated passwords
+    Conf1 = conf_parse:parse("escaped.value = '!@$#%^&*+-_()|<>'\n"),
+    Config1 = cuttlefish_generator:map(Schema, Conf1),
+    ?assertEqual("!@$#%^&*+-_()|<>", proplists:get_value(value, proplists:get_value(escaped, Config1))).
+
 proplist_equals(Expected, Actual) ->
     ExpectedKeys = lists:sort(proplists:get_keys(Expected)),
     ActualKeys = lists:sort(proplists:get_keys(Actual)),

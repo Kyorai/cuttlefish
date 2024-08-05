@@ -126,16 +126,6 @@ included_dir_test() ->
         ], Conf),
     ok.
 
-invalid_included_file_test() ->
-  Conf = conf_parse:file("test/invalid_include_file.conf"),
-  ?assertMatch({[], _PathWithNewLineAndCarriage, {{line,_}, {column, _}}}, Conf),
-  ok.
-
-invalid_included_dir_test() ->
-  Conf = conf_parse:file("test/invalid_include_dir.conf"),
-  ?assertMatch({[], _PathWithNewLineAndCarriage, {{line, _},{column, _}}}, Conf),
-  ok.
-
 escaped_dots_are_removed_test() ->
     Conf = conf_parse:parse("#comment\nsetting\\.0 = thing0\n"),
     ?assertEqual([
@@ -153,6 +143,22 @@ invalid_utf8_test() ->
     InvalidCodePoint = 16#11FFFF,
     Expected = {error, <<"setting = thing">>, [InvalidCodePoint, $\n]},
     Actual = conf_parse:parse("setting = thing" ++ [InvalidCodePoint] ++ "\n"),
+    ?assertMatch(Expected, Actual),
+    ok.
+
+invalid_included_file_test() ->
+    Conf = conf_parse:file("test/invalid_include_file.conf"),
+    ?assertMatch({[], _PathWithNewLineAndCarriage, {{line,_}, {column, _}}}, Conf),
+    ok.
+
+invalid_included_dir_test() ->
+    Conf = conf_parse:file("test/invalid_include_dir.conf"),
+    ?assertMatch({[], _PathWithNewLineAndCarriage, {{line, _},{column, _}}}, Conf),
+    ok.
+
+escaped_string_test() ->
+    Expected = [{["setting"],"e9238-7_49%#sod7"}],
+    Actual = conf_parse:parse("setting = 'e9238-7_49%#sod7'" ++ "\n"),
     ?assertMatch(Expected, Actual),
     ok.
 
@@ -183,16 +189,20 @@ file(Filename) ->
     end.
 
 -spec parse(binary() | list()) -> any().
-parse(List) when is_list(List) -> parse(unicode:characters_to_binary(List));
+parse(List) when is_list(List) ->
+    case unicode:characters_to_binary(List) of
+        Binary when is_binary(Binary) ->
+            parse(Binary);
+        ErrorOrIncomplete ->
+            ErrorOrIncomplete
+    end;
 parse(Input) when is_binary(Input) ->
-  _ = setup_memo(),
-  Result = case 'config'(Input,{{line,1},{column,1}}) of
-             {AST, <<>>, _Index} -> AST;
-             Any -> Any
-           end,
-  release_memo(), Result;
-parse(Error) ->
-    Error.
+    _ = setup_memo(),
+    Result = case 'config'(Input,{{line,1},{column,1}}) of
+                 {AST, <<>>, _Index} -> AST;
+                 Any -> Any
+             end,
+    release_memo(), Result.
 
 -spec 'config'(input(), index()) -> parse_result().
 'config'(Input, Index) ->
@@ -211,9 +221,9 @@ parse(Error) ->
 
 -spec 'setting'(input(), index()) -> parse_result().
 'setting'(Input, Index) ->
-  p(Input, Index, 'setting', fun(I,D) -> (p_seq([p_zero_or_more(fun 'ws'/2), fun 'key'/2, p_zero_or_more(fun 'ws'/2), p_string(<<"=">>), p_zero_or_more(fun 'ws'/2), fun 'value'/2, p_zero_or_more(fun 'ws'/2), p_optional(fun 'comment'/2)]))(I,D) end, fun(Node, _Idx) ->
+  p(Input, Index, 'setting', fun(I,D) -> (p_seq([p_zero_or_more(fun 'ws'/2), fun 'key'/2, p_zero_or_more(fun 'ws'/2), p_string(<<"=">>), p_zero_or_more(fun 'ws'/2), p_choose([fun 'escaped_value'/2, fun 'unescaped_value'/2]), p_zero_or_more(fun 'ws'/2), p_optional(fun 'comment'/2)]))(I,D) end, fun(Node, Idx) ->
     [ _, Key, _, _Eq, _, Value, _, _ ] = Node,
-    {Key, Value}
+    {Key, try_unicode_characters_to_list(Value, Idx)}
  end).
 
 -spec 'key'(input(), index()) -> parse_result().
@@ -223,9 +233,16 @@ parse(Error) ->
     [try_unicode_characters_to_list(H, Idx)| [try_unicode_characters_to_list(W, Idx) || [_, W] <- T]]
  end).
 
--spec 'value'(input(), index()) -> parse_result().
-'value'(Input, Index) ->
-  p(Input, Index, 'value', fun(I,D) -> (p_one_or_more(p_seq([p_not(p_choose([p_seq([p_zero_or_more(fun 'ws'/2), fun 'crlf'/2]), fun 'comment'/2])), p_anything()])))(I,D) end, fun(Node, Idx) ->
+-spec 'escaped_value'(input(), index()) -> parse_result().
+'escaped_value'(Input, Index) ->
+  p(Input, Index, 'escaped_value', fun(I,D) -> (p_seq([p_string(<<"\'">>), p_zero_or_more(p_seq([p_not(p_string(<<"\'">>)), p_anything()])), p_string(<<"\'">>)]))(I,D) end, fun(Node, Idx) ->
+    Stripped = string:trim(Node, both, [$']),
+    try_unicode_characters_to_list(Stripped, Idx)
+ end).
+
+-spec 'unescaped_value'(input(), index()) -> parse_result().
+'unescaped_value'(Input, Index) ->
+  p(Input, Index, 'unescaped_value', fun(I,D) -> (p_one_or_more(p_seq([p_not(p_choose([p_seq([p_zero_or_more(fun 'ws'/2), fun 'crlf'/2]), fun 'comment'/2])), p_anything()])))(I,D) end, fun(Node, Idx) ->
     try_unicode_characters_to_list(Node, Idx)
  end).
 
