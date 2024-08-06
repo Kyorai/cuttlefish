@@ -46,6 +46,7 @@
                     {list, datatype()}.
 -type extended() :: { integer, integer() } |
                     { string, string() } |
+                    { binary, binary() } |
                     { file, file:filename() } |
                     { directory, file:filename() } |
                     { atom, atom() } |
@@ -56,7 +57,8 @@
                     { {percent, integer}, integer() } |
                     { {percent, float}, float() } |
                     { float, float() } |
-                    { tagged_string, string() }.
+                    { tagged_string, string() } |
+                    { tagged_binary, string() }.
 -type datatype_list() :: [ datatype() | extended() ].
 
 -export_type([datatype/0, extended/0, datatype_list/0]).
@@ -73,6 +75,7 @@
 -spec is_supported(any()) -> boolean().
 is_supported(integer) -> true;
 is_supported(string) -> true;
+is_supported(binary) -> true;
 is_supported(file) -> true;
 is_supported(directory) -> true;
 is_supported(flag) -> true;
@@ -95,6 +98,7 @@ is_supported({percent, integer}) -> true;
 is_supported({percent, float}) -> true;
 is_supported(float) -> true;
 is_supported(tagged_string) -> true;
+is_supported(tagged_binary) -> true;
 is_supported({list, {list, _}}) ->
     % lists of lists are not supported
     false;
@@ -105,7 +109,9 @@ is_supported(_) -> false.
 -spec is_extended(any()) -> boolean().
 is_extended({integer, I}) when is_integer(I) -> true;
 is_extended({string, S}) when is_list(S) -> true;
+is_extended({binary, B}) when is_list(B) -> true;
 is_extended({tagged_string, S}) when is_list(S) -> true;
+is_extended({tagged_binary, B}) when is_list(B) -> true;
 is_extended({atom, A}) when is_atom(A) -> true;
 is_extended({file, F}) when is_list(F) -> true;
 is_extended({directory, D}) when is_list(D) -> true;
@@ -131,7 +137,9 @@ is_extended(_) -> false.
 -spec extended_from(extended()) -> datatype().
 extended_from({integer, _}) -> integer;
 extended_from({string, _}) -> string;
+extended_from({binary, _}) -> binary;
 extended_from({tagged_string, _}) -> tagged_string;
+extended_from({tagged_binary, _}) -> tagged_binary;
 extended_from({atom, _}) -> atom;
 extended_from({file, _}) -> file;
 extended_from({directory, _}) -> directory;
@@ -188,8 +196,12 @@ to_string(Bytesize, bytesize) when is_list(Bytesize) -> Bytesize;
 to_string(Bytesize, bytesize) when is_integer(Bytesize) -> cuttlefish_bytesize:to_string(Bytesize);
 
 to_string(String, string) when is_list(String) -> String;
+to_string(Bin, binary) when is_list(Bin) -> Bin;
+to_string(Bin, binary) when is_binary(Bin) -> binary_to_list(Bin);
 
 to_string({Tag, String}, tagged_string) when is_list(Tag), is_list(String) -> Tag ++ ":" ++ String;
+to_string({Tag, String}, tagged_binary) when is_list(Tag), is_list(String) -> Tag ++ ":" ++ String;
+to_string({Tag, Bin}, tagged_binary) when is_list(Tag), is_binary(Bin) -> Tag ++ ":" ++ binary_to_list(Bin);
 
 to_string(File, file) when is_list(File) -> File;
 
@@ -227,6 +239,8 @@ to_string(Value, MaybeExtendedDatatype) ->
 from_string(Atom, atom) when is_atom(Atom) -> Atom;
 from_string(String, atom) when is_list(String) -> list_to_atom(String);
 
+from_string(String, binary) when is_list(String) -> list_to_binary(String);
+
 from_string(Value, {enum, Enum}) ->
     cuttlefish_enum:parse(Value, {enum, Enum});
 
@@ -248,6 +262,9 @@ from_string(String, fqdn) when is_list(String) ->
 
 from_string(String, tagged_string) when is_list(String) ->
     from_string_to_tagged_string(String, lists:split(string:rchr(String, $:), String));
+
+from_string(String, tagged_binary) when is_list(String) ->
+    from_string_to_tagged_binary(String, lists:split(string:rchr(String, $:), String));
 
 from_string({local, UDS, Port}, domain_socket) when is_list(UDS), is_integer(Port) -> {local, UDS, Port};
 from_string(String, domain_socket) when is_list(String) ->
@@ -380,6 +397,15 @@ from_string_to_tagged_string(_String, {TagPlusColon, TaggedValue}) ->
     %% Drop the trailing colon from the tag
     Tag = droplast(TagPlusColon),
     {list_to_atom(Tag), TaggedValue}.
+
+from_string_to_tagged_binary(String, {[], String}) ->
+    %% does not follow the tag:value format convention
+    {error, {conversion, {String, "tagged binary"}}};
+
+from_string_to_tagged_binary(_String, {TagPlusColon, TaggedValue}) ->
+    %% Drop the trailing colon from the tag
+    Tag = droplast(TagPlusColon),
+    {list_to_atom(Tag), list_to_binary(TaggedValue)}.
 
 from_string_to_uds(String, {[], String}) ->
     {error, {conversion, {String, 'UDS'}}};
@@ -645,6 +671,7 @@ from_string_unsupported_datatype_test() ->
 is_supported_test() ->
     ?assert(is_supported(integer)),
     ?assert(is_supported(string)),
+    ?assert(is_supported(binary)),
     ?assert(is_supported(atom)),
     ?assert(is_supported(file)),
     ?assert(is_supported(directory)),
@@ -661,6 +688,7 @@ is_supported_test() ->
     ?assert(is_supported(bytesize)),
     ?assert(is_supported(domain_socket)),
     ?assert(is_supported(tagged_string)),
+    ?assert(is_supported(tagged_binary)),
     ?assert(is_supported({list, string})),
     ?assert(not(is_supported({list, {list, string}}))),
     ?assert(not(is_supported(some_unsupported_type))),
@@ -674,6 +702,10 @@ is_extended_test() ->
     ?assertEqual(true, is_extended({string, "string"})),
     ?assertEqual(false, is_extended({string, string})),
     ?assertEqual(false, is_extended({string, 10})),
+
+    ?assertEqual(true, is_extended({binary, "string"})),
+    ?assertEqual(false, is_extended({binary, string})),
+    ?assertEqual(false, is_extended({binary, 10})),
 
     ?assertEqual(true, is_extended({atom, atom})),
     ?assertEqual(false, is_extended({atom, "atom"})),
@@ -712,6 +744,7 @@ is_extended_test() ->
     ?assertEqual(true, is_extended({float, 0.1})),
 
     ?assertEqual(true, is_extended({tagged_string, "tag:value"})),
+    ?assertEqual(true, is_extended({tagged_binary, "tag:value"})),
 
     ok.
 
