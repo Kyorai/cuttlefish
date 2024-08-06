@@ -174,12 +174,26 @@ duration_test() ->
     ErrConfig = cuttlefish_generator:map(Schema, Conf2),
     ?assertMatch({error, transform_datatypes, _}, ErrConfig).
 
-tagged_string_test() ->
-    Schema = cuttlefish_schema:files(["test/tagged_string.schema"]),
+binary_datatype_test() ->
+    Schema = cuttlefish_schema:files(["test/binary.schema"]),
 
-    Conf = conf_parse:parse(<<"tagged_key = tagged:e614d97599dab483f\n">>),
+    Conf = conf_parse:parse(<<"a.b.binary = 96c5381e396dcc1aa8056709c42891473619c277\n">>),
     NewConfig = cuttlefish_generator:map(Schema, Conf),
-    ?assertEqual({tagged, "e614d97599dab483f"}, proplists:get_value(tagged_key, proplists:get_value(cuttlefish, NewConfig))).
+    ?assertEqual(<<"96c5381e396dcc1aa8056709c42891473619c277">>, proplists:get_value(binary, proplists:get_value(cuttlefish, NewConfig))).
+
+tagged_string_test() ->
+    Schema = cuttlefish_schema:files(["test/tagged_values.schema"]),
+
+    Conf = conf_parse:parse(<<"tagged_string = tagged:e614d97599dab483f\n">>),
+    NewConfig = cuttlefish_generator:map(Schema, Conf),
+    ?assertEqual({tagged, "e614d97599dab483f"}, proplists:get_value(tagged_string, proplists:get_value(cuttlefish, NewConfig))).
+
+tagged_binary_test() ->
+    Schema = cuttlefish_schema:files(["test/tagged_values.schema"]),
+
+    Conf = conf_parse:parse(<<"tagged_binary = tagged:b614d97599dab483f\n">>),
+    NewConfig = cuttlefish_generator:map(Schema, Conf),
+    ?assertEqual({tagged, <<"b614d97599dab483f">>}, proplists:get_value(tagged_binary, proplists:get_value(cuttlefish, NewConfig))).
 
 escaped_value_case1_test() ->
     Schema = cuttlefish_schema:files(["test/escaped_values.schema"]),

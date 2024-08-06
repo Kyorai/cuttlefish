@@ -1,0 +1,3 @@
+{mapping, "a.b.binary", "cuttlefish.binary", [
+  {datatype, [binary]}
+]}.

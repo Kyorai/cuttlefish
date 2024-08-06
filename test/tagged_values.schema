@@ -1,0 +1,7 @@
+{mapping, "tagged_string", "cuttlefish.tagged_string", [
+  {datatype, [tagged_string]}
+]}.
+
+{mapping, "tagged_binary", "cuttlefish.tagged_binary", [
+  {datatype, [tagged_binary]}
+]}.
