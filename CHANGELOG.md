@@ -1,8 +1,16 @@
 # Changelog
 
+## v3.6.0 (in development)
+
+No changes yet.
+
+
 ## v3.5.0
 
- * Support tagged values with colons [#56](https://github.com/Kyorai/cuttlefish/pull/56)
+* Parse tagged value tag up to the first colon #56 by @michaelklishin in https://github.com/Kyorai/cuttlefish/pull/57
+* Restrict what characters tagged value prefixes (tags) are allowed to have by @michaelklishin in https://github.com/Kyorai/cuttlefish/pull/58
+
+**Full Changelog**: https://github.com/Kyorai/cuttlefish/compare/v3.4.0...v3.5.0
 
 ## [v3.4.0](https://github.com/Kyorai/cuttlefish/tree/v3.4.0)
 
