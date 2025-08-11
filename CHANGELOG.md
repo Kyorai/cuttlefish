@@ -8,6 +8,10 @@
 
  * New data types: tagged strings and binaries [#52](https://github.com/Kyorai/cuttlefish/pull/52)
 
+## [v3.3.0](https://github.com/Kyorai/cuttlefish/tree/v3.3.0)
+
+ * Support value escaping [#37](https://github.com/Kyorai/cuttlefish/issues/37), [#48](https://github.com/Kyorai/cuttlefish/pull/48)
+ * Require a space before an `include` directive [#47](https://github.com/Kyorai/cuttlefish/pull/47)
 
 ## [v3.2.0](https://github.com/Kyorai/cuttlefish/tree/v3.2.0) (2023-02-13)
 
