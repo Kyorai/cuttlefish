@@ -1,5 +1,14 @@
 # Changelog
 
+## v3.5.0
+
+ * Support tagged values with colons [#56](https://github.com/Kyorai/cuttlefish/pull/56)
+
+## [v3.4.0](https://github.com/Kyorai/cuttlefish/tree/v3.4.0)
+
+ * New data types: tagged strings and binaries [#52](https://github.com/Kyorai/cuttlefish/pull/52)
+
+
 ## [v3.2.0](https://github.com/Kyorai/cuttlefish/tree/v3.2.0) (2023-02-13)
 
 [Full Changelog](https://github.com/Kyorai/cuttlefish/compare/v3.1.0...v3.2.0)
