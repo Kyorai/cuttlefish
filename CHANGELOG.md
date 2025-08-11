@@ -6,12 +6,20 @@
 
 ## [v3.4.0](https://github.com/Kyorai/cuttlefish/tree/v3.4.0)
 
- * New data types: tagged strings and binaries [#52](https://github.com/Kyorai/cuttlefish/pull/52)
+* New data types: "plain" binary, tagged binary by @michaelklishin in https://github.com/Kyorai/cuttlefish/pull/52
+
+**Full Changelog**: https://github.com/Kyorai/cuttlefish/compare/v3.3.0...v3.4.0
 
 ## [v3.3.0](https://github.com/Kyorai/cuttlefish/tree/v3.3.0)
 
- * Support value escaping [#37](https://github.com/Kyorai/cuttlefish/issues/37), [#48](https://github.com/Kyorai/cuttlefish/pull/48)
- * Require a space before an `include` directive [#47](https://github.com/Kyorai/cuttlefish/pull/47)
+* Don't fail with an 'undefined' log level by @michaelklishin in https://github.com/Kyorai/cuttlefish/pull/45
+* New data type: tagged string by @michaelklishin in https://github.com/Kyorai/cuttlefish/pull/46
+* Grammar: require a space after the "include" directive by @michaelklishin in https://github.com/Kyorai/cuttlefish/pull/47
+* Support for 'escaped values' by @michaelklishin in https://github.com/Kyorai/cuttlefish/pull/48
+* Require Erlang/OTP 24.x by @michaelklishin in https://github.com/Kyorai/cuttlefish/pull/49
+* Bump getopt to 1.0.3 by @michaelklishin in https://github.com/Kyorai/cuttlefish/pull/50
+
+**Full Changelog**: https://github.com/Kyorai/cuttlefish/compare/v3.2.0...v3.3.0
 
 ## [v3.2.0](https://github.com/Kyorai/cuttlefish/tree/v3.2.0) (2023-02-13)
 
