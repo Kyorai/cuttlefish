@@ -431,7 +431,7 @@ from_string_to_tagged_binary(String, {String, <<>>}) ->
     {error, {conversion, {String, "tagged binary"}}};
 
 from_string_to_tagged_binary(_String, {Tag, TaggedValue}) ->
-    {Tag, TaggedValue}.
+    {binary_to_atom(Tag), TaggedValue}.
 
 from_string_to_uds(String, {[], String}) ->
     {error, {conversion, {String, 'UDS'}}};
