@@ -235,6 +235,8 @@ to_string(Value, MaybeExtendedDatatype) ->
             {error, {type, {Value, MaybeExtendedDatatype}}}
     end.
 
+-define(TAGGED_VALUE_PREFIX_REGEX, <<"^[a-zA-Z0-9_]+\:">>).
+
 -spec from_string(term(), datatype()) -> term() | cuttlefish_error:error().
 from_string(Atom, atom) when is_atom(Atom) -> Atom;
 from_string(String, atom) when is_list(String) -> list_to_atom(String);
@@ -262,30 +264,42 @@ from_string(String, fqdn) when is_list(String) ->
 
 from_string(String, tagged_string) when is_list(String) ->
     Bin = list_to_binary(String),
-    %% note: unlike lists:split/2, this splits at the first colon occurrence,
-    %% which is what we want here
-    case binary:split(Bin, <<":">>) of
-        [<<>>, _Val] ->
-            {error, {conversion, {String, "tagged string"}}};
-        [_Prefix, <<>>] ->
-            {error, {conversion, {String, "tagged string"}}};
-        [Prefix, Val] ->
-            from_string_to_tagged_string(String, {Prefix, Val});
+    {ok, AlphanumericPrefixRE} = re:compile(?TAGGED_VALUE_PREFIX_REGEX),
+    case re:run(Bin, AlphanumericPrefixRE) of
+        {match, _} ->
+            %% note: unlike lists:split/2, this splits at the first colon occurrence,
+            %% which is what we want here
+            case binary:split(Bin, <<":">>) of
+                [<<>>, _Val] ->
+                    {error, {conversion, {String, "tagged string"}}};
+                [_Prefix, <<>>] ->
+                    {error, {conversion, {String, "tagged string"}}};
+                [Prefix, Val] ->
+                    from_string_to_tagged_string(String, {Prefix, Val});
+                _ ->
+                    {error, {conversion, {String, "tagged string"}}}
+            end;
         _ ->
             {error, {conversion, {String, "tagged string"}}}
     end;
 
 from_string(String, tagged_binary) when is_list(String) ->
     Bin = list_to_binary(String),
-    %% note: unlike lists:split/2, this splits at the first colon occurrence,
-    %% which is what we want here
-    case binary:split(Bin, <<":">>) of
-        [<<>>, _Val] ->
-            {error, {conversion, {String, "tagged binary"}}};
-        [_Prefix, <<>>] ->
-            {error, {conversion, {String, "tagged binary"}}};
-        [Prefix, Val] ->
-            from_string_to_tagged_binary(String, {Prefix, Val});
+    {ok, AlphanumericPrefixRE} = re:compile(?TAGGED_VALUE_PREFIX_REGEX),
+    case re:run(Bin, AlphanumericPrefixRE) of
+        {match, _} ->
+            %% note: unlike lists:split/2, this splits at the first colon occurrence,
+            %% which is what we want here
+            case binary:split(Bin, <<":">>) of
+                [<<>>, _Val] ->
+                    {error, {conversion, {String, "tagged binary"}}};
+                [_Prefix, <<>>] ->
+                    {error, {conversion, {String, "tagged binary"}}};
+                [Prefix, Val] ->
+                    from_string_to_tagged_binary(String, {Prefix, Val});
+                _ ->
+                    {error, {conversion, {String, "tagged binary"}}}
+            end;
         _ ->
             {error, {conversion, {String, "tagged binary"}}}
     end;
@@ -674,8 +688,21 @@ from_string_tagged_string_test() ->
     ?assertEqual({prefixed, "string"}, from_string("prefixed:string", tagged_string)),
     ?assertEqual({encrypted, "str:ng"}, from_string("encrypted:str:ng", tagged_string)),
 
+    %% the tag (prefix) is not alphanumeric, reject such values
+    Val1 = "a$$b12:12323",
+    ?assertEqual({error,{conversion,{Val1, "tagged string"}}}, from_string(Val1, tagged_string)),
     ?assertMatch({error, {conversion, _}}, from_string(":value", tagged_string)),
     ?assertMatch({error, {conversion, _}}, from_string("prefixed:", tagged_string)).
+
+from_string_tagged_binary_test() ->
+    ?assertEqual({prefixed, <<"binary">>}, from_string("prefixed:binary", tagged_binary)),
+    ?assertEqual({encrypted, <<"str:ng">>}, from_string("encrypted:str:ng", tagged_binary)),
+
+    %% the tag (prefix) is not alphanumeric, reject such values
+    Val1 = "a$$b12:12323",
+    ?assertEqual({error,{conversion,{Val1, "tagged binary"}}}, from_string(Val1, tagged_binary)),
+    ?assertMatch({error, {conversion, _}}, from_string(":value", tagged_binary)),
+    ?assertMatch({error, {conversion, _}}, from_string("prefixed:", tagged_binary)).
 
 from_string_string_list_test() ->
     %% more examples in the the cuttlefish_duration tests
