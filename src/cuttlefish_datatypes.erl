@@ -261,10 +261,34 @@ from_string(String, fqdn) when is_list(String) ->
     from_string_to_fqdn(String, lists:split(string:rchr(String, $:), String));
 
 from_string(String, tagged_string) when is_list(String) ->
-    from_string_to_tagged_string(String, lists:split(string:rchr(String, $:), String));
+    Bin = list_to_binary(String),
+    %% note: unlike lists:split/2, this splits at the first colon occurrence,
+    %% which is what we want here
+    case binary:split(Bin, <<":">>) of
+        [<<>>, _Val] ->
+            {error, {conversion, {String, "tagged string"}}};
+        [_Prefix, <<>>] ->
+            {error, {conversion, {String, "tagged string"}}};
+        [Prefix, Val] ->
+            from_string_to_tagged_string(String, {Prefix, Val});
+        _ ->
+            {error, {conversion, {String, "tagged string"}}}
+    end;
 
 from_string(String, tagged_binary) when is_list(String) ->
-    from_string_to_tagged_binary(String, lists:split(string:rchr(String, $:), String));
+    Bin = list_to_binary(String),
+    %% note: unlike lists:split/2, this splits at the first colon occurrence,
+    %% which is what we want here
+    case binary:split(Bin, <<":">>) of
+        [<<>>, _Val] ->
+            {error, {conversion, {String, "tagged binary"}}};
+        [_Prefix, <<>>] ->
+            {error, {conversion, {String, "tagged binary"}}};
+        [Prefix, Val] ->
+            from_string_to_tagged_binary(String, {Prefix, Val});
+        _ ->
+            {error, {conversion, {String, "tagged binary"}}}
+    end;
 
 from_string({local, UDS, Port}, domain_socket) when is_list(UDS), is_integer(Port) -> {local, UDS, Port};
 from_string(String, domain_socket) when is_list(String) ->
@@ -390,22 +414,24 @@ from_string_to_fqdn(String, {FQDNPlusColon, PortString}) ->
     FQDN = droplast(FQDNPlusColon),
     fqdn_conversions(String, FQDN, validate_fqdn(FQDN), port_to_integer(PortString)).
 
-from_string_to_tagged_string(String, {[], String}) ->
-    %% does not follow the tag:value format convention
+from_string_to_tagged_string(String, {<<>>, String}) ->
+    %% does not follow the tag:value format (the tag is blank)
     {error, {conversion, {String, "tagged string"}}};
-from_string_to_tagged_string(_String, {TagPlusColon, TaggedValue}) ->
-    %% Drop the trailing colon from the tag
-    Tag = droplast(TagPlusColon),
-    {list_to_atom(Tag), TaggedValue}.
+from_string_to_tagged_string(String, {String, <<>>}) ->
+    %% does not follow the tag:value format (the value is blank)
+    {error, {conversion, {String, "tagged string"}}};
+from_string_to_tagged_string(_String, {Tag, TaggedValue}) ->
+    {binary_to_atom(Tag), binary_to_list(TaggedValue)}.
 
-from_string_to_tagged_binary(String, {[], String}) ->
-    %% does not follow the tag:value format convention
+from_string_to_tagged_binary(String, {<<>>, String}) ->
+    %% does not follow the tag:value format (the tag is blank)
+    {error, {conversion, {String, "tagged binary"}}};
+from_string_to_tagged_binary(String, {String, <<>>}) ->
+    %% does not follow the tag:value format (the value is blank)
     {error, {conversion, {String, "tagged binary"}}};
 
-from_string_to_tagged_binary(_String, {TagPlusColon, TaggedValue}) ->
-    %% Drop the trailing colon from the tag
-    Tag = droplast(TagPlusColon),
-    {list_to_atom(Tag), list_to_binary(TaggedValue)}.
+from_string_to_tagged_binary(_String, {Tag, TaggedValue}) ->
+    {Tag, TaggedValue}.
 
 from_string_to_uds(String, {[], String}) ->
     {error, {conversion, {String, 'UDS'}}};
@@ -643,6 +669,13 @@ from_string_float_test() ->
 
 from_string_string_test() ->
     ?assertEqual("string", from_string("string", string)).
+
+from_string_tagged_string_test() ->
+    ?assertEqual({prefixed, "string"}, from_string("prefixed:string", tagged_string)),
+    ?assertEqual({encrypted, "str:ng"}, from_string("encrypted:str:ng", tagged_string)),
+
+    ?assertMatch({error, {conversion, _}}, from_string(":value", tagged_string)),
+    ?assertMatch({error, {conversion, _}}, from_string("prefixed:", tagged_string)).
 
 from_string_string_list_test() ->
     %% more examples in the the cuttlefish_duration tests
