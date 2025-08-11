@@ -12,10 +12,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        otp_version: [24, 25]
+        otp_version: [26, 27]
         os: [ubuntu-latest, windows-latest]
     env:
-      LATEST_OTP_RELEASE: 25
+      LATEST_OTP_RELEASE: 28
     steps:
       - uses: actions/checkout@v3
       - uses: erlef/setup-beam@v1
