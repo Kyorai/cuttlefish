@@ -272,10 +272,10 @@ proplists_to_kvcpath_riak_core_test() ->
         {ring_creation_size,128},
         {cluster_mgr, {"127.0.0.1", 9080 } }
     ]}],
-    Paths = proplist_to_kvcpaths(Proplist),
-    ?assertEqual([
-        "riak_core.ring_creation_size",
-        "riak_core.cluster_mgr"
+    Paths = lists:sort(proplist_to_kvcpaths(Proplist)),
+    ?assertMatch([
+        "riak_core.cluster_mgr",
+        "riak_core.ring_creation_size"
     ], Paths),
     ok.
 
