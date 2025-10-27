@@ -351,6 +351,94 @@ generate_comments_test() ->
     Comments = generate_comments(SchemaElement),
     ?assertEqual(["## Hi!", "## Bye!", "## ", "## Acceptable values:", "##   - text"], Comments).
 
+normalize_newlines(Conf) ->
+    normalize_newlines(Conf, {os_type, os:type()}).
+
+normalize_newlines(Conf, {os_type, {win32, _}}) ->
+    {ok, Regex} = re:compile("\r\n", [unicode]),
+    F = fun (V) ->
+            re:replace(V, Regex, "\n", [global, {return, list}])
+        end,
+    normalize_newlines(Conf, F, []);
+normalize_newlines(Conf, {os_type, _}) ->
+    normalize_newlines(Conf, fun (V) -> V end, []).
+
+normalize_newlines([], _F, Acc) ->
+    Acc;
+normalize_newlines({errorlist, _}=Errorlist, _F, _Acc) ->
+    throw(Errorlist);
+normalize_newlines({error, _}=Error, _F, _Acc) ->
+    throw(Error);
+normalize_newlines([{KeyList, Value}|Rest], F, Acc0) ->
+    Acc1 = [{KeyList, F(Value)} | Acc0],
+    normalize_newlines(Rest, F, Acc1).
+
+multiline_test() ->
+    Conf = normalize_newlines(file("test/multiline.conf")),
+    ?assertEqual(1, length(Conf)),
+    ?assertMatch([{["a"],"    l0\n    l1\n    l2"}], Conf).
+
+multiline_empty_test() ->
+    Conf = file("test/multiline_empty.conf"),
+    ?assertEqual(1, length(Conf)),
+    ?assertMatch([{["a"],[]}], Conf).
+
+multiline_same_line_test() ->
+    Conf = file("test/multiline_same_line.conf"),
+    ?assertEqual(1, length(Conf)),
+    ?assertMatch([{["a"],"value"}], Conf).
+
+multiline_special_chars_test() ->
+    Conf = normalize_newlines(file("test/multiline_special_chars.conf")),
+    ?assertEqual(1, length(Conf)),
+    ?assertMatch([{["a"], "key = value\n# comment\n'quoted' = \"double\""}], Conf).
+
+multiline_unclosed_test() ->
+    Conf = file("test/multiline_unclosed.conf"),
+    ?assertMatch({errorlist, [{error, {conf_syntax, {"test/multiline_unclosed.conf", _}}}]}, Conf).
+
+multiline_embedded_delimiter_test() ->
+    Conf = file("test/multiline_embedded_delimiter.conf"),
+    ?assertMatch({errorlist, [{error, {conf_syntax, {"test/multiline_embedded_delimiter.conf", _}}}]}, Conf).
+
+multiline_with_trailing_comment_test() ->
+    Conf = normalize_newlines(file("test/multiline_with_trailing_comment.conf")),
+    ?assertEqual(1, length(Conf)),
+    ?assertMatch([{["a"],"value"}], Conf).
+
+multiline_multiple_test() ->
+    Conf = normalize_newlines(file("test/multiline_multiple.conf")),
+    ?assertEqual(2, length(Conf)),
+    ?assertMatch([{["b"],"l3\nl4\nl5"},
+                  {["a"],"    l0\n    l1\n    l2"}], Conf).
+
+multiline_mixed_test() ->
+    Conf = normalize_newlines(file("test/multiline_mixed.conf")),
+    ?assertEqual(3, length(Conf)),
+    ?assertMatch([{["another"],"simple"},
+                  {["regular"],"value"},
+                  {["a"],"    l0\nl1\n    l2"}], Conf).
+
+multiline_whitespace_only_test() ->
+    Conf = normalize_newlines(file("test/multiline_whitespace_only.conf")),
+    ?assertEqual(1, length(Conf)),
+    ?assertMatch([{["a"],"  \t\n\r  "}], Conf).
+
+multiline_with_include_test() ->
+    Conf = normalize_newlines(file("test/multiline_with_include.conf")),
+    ?assertEqual(1, length(Conf)),
+    ?assertMatch([{["a"], "include other.conf\ninclude *.conf"}], Conf).
+
+multiline_eof_test() ->
+    Conf = file("test/multiline_eof.conf"),
+    ?assertEqual(1, length(Conf)),
+    ?assertMatch([{["a"], "value"}], Conf).
+
+multiline_unicode_test() ->
+    Conf = normalize_newlines(file("test/multiline_unicode.conf")),
+    ?assertEqual(1, length(Conf)),
+    ?assertMatch([{["greeting"], "Hello 世界! 🌍\nЗдравствуй мир!\nمرحبا بالعالم\nこんにちは世界"}], Conf).
+
 duplicates_test() ->
     Conf = file("test/multi1.conf"),
     ?assertEqual(2, length(Conf)),

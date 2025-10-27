@@ -56,7 +56,7 @@ line <- ((setting / include / comment / ws+) (crlf / eof)) / crlf %{
 
 %% A setting is a key and a value, joined by =, with surrounding
 %% whitespace ignored.
-setting <- ws* key ws* "=" ws* (escaped_value / unescaped_value) ws* comment? %{
+setting <- ws* key ws* "=" ws* (multiline_value / escaped_value / unescaped_value) ws* comment? %{
     [ _, Key, _, _Eq, _, Value, _, _ ] = Node,
     {Key, try_unicode_characters_to_list(Value, Idx)}
 %};
@@ -65,6 +65,12 @@ setting <- ws* key ws* "=" ws* (escaped_value / unescaped_value) ws* comment? %{
 key <- head:word tail:("." word)* %{
     [{head, H}, {tail, T}] = Node,
     [try_unicode_characters_to_list(H, Idx)| [try_unicode_characters_to_list(W, Idx) || [_, W] <- T]]
+%};
+
+%% A multiline value is any character between two pairs of triple single quotes, spanning lines
+multiline_value <- "'''" ((!"'''" .)* / crlf) "'''" %{
+    Node0 = string:trim(Node, both, [$',$\n,[$\r,$\n]]),
+    try_unicode_characters_to_list(Node0 Idx)
 %};
 
 %% An escaped value is any character between single quotes except for EOF
