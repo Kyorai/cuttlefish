@@ -221,7 +221,7 @@ parse(Input) when is_binary(Input) ->
 
 -spec 'setting'(input(), index()) -> parse_result().
 'setting'(Input, Index) ->
-  p(Input, Index, 'setting', fun(I,D) -> (p_seq([p_zero_or_more(fun 'ws'/2), fun 'key'/2, p_zero_or_more(fun 'ws'/2), p_string(<<"=">>), p_zero_or_more(fun 'ws'/2), p_choose([fun 'escaped_value'/2, fun 'unescaped_value'/2]), p_zero_or_more(fun 'ws'/2), p_optional(fun 'comment'/2)]))(I,D) end, fun(Node, Idx) ->
+  p(Input, Index, 'setting', fun(I,D) -> (p_seq([p_zero_or_more(fun 'ws'/2), fun 'key'/2, p_zero_or_more(fun 'ws'/2), p_string(<<"=">>), p_zero_or_more(fun 'ws'/2), p_choose([fun 'multiline_value'/2, fun 'escaped_value'/2, fun 'unescaped_value'/2]), p_zero_or_more(fun 'ws'/2), p_optional(fun 'comment'/2)]))(I,D) end, fun(Node, Idx) ->
     [ _, Key, _, _Eq, _, Value, _, _ ] = Node,
     {Key, try_unicode_characters_to_list(Value, Idx)}
  end).
@@ -231,6 +231,13 @@ parse(Input) when is_binary(Input) ->
   p(Input, Index, 'key', fun(I,D) -> (p_seq([p_label('head', fun 'word'/2), p_label('tail', p_zero_or_more(p_seq([p_string(<<".">>), fun 'word'/2])))]))(I,D) end, fun(Node, Idx) ->
     [{head, H}, {tail, T}] = Node,
     [try_unicode_characters_to_list(H, Idx)| [try_unicode_characters_to_list(W, Idx) || [_, W] <- T]]
+ end).
+
+-spec 'multiline_value'(input(), index()) -> parse_result().
+'multiline_value'(Input, Index) ->
+  p(Input, Index, 'multiline_value', fun(I,D) -> (p_seq([p_string(<<"\'\'\'">>), p_choose([p_zero_or_more(p_seq([p_not(p_string(<<"\'\'\'">>)), p_anything()])), fun 'crlf'/2]), p_string(<<"\'\'\'">>)]))(I,D) end, fun(Node, Idx) ->
+    Node0 = string:trim(Node, both, [$',$\n,[$\r,$\n]]),
+    try_unicode_characters_to_list(Node0, Idx)
  end).
 
 -spec 'escaped_value'(input(), index()) -> parse_result().

@@ -98,6 +98,40 @@ log.console.file = /var/log/console.log
 log.syslog = on
 ```
 
+### Multiline Values
+
+Cuttlefish supports multiline values using here-document syntax with triple
+single quotes (`'''`). This is useful for embedding structured content like
+JSON, scripts, or formatted text:
+
+```ini
+# Simple multiline value
+description = '''
+This is a multiline description
+that spans multiple lines
+and preserves formatting.
+'''
+
+# JSON configuration example
+api.config = '''
+{
+  "endpoints": {
+    "health": "/health",
+    "metrics": "/metrics"
+  },
+  "timeout": 30,
+  "retries": 3
+}
+'''
+
+# Inline multiline (no newlines)
+short.value = '''single line content'''
+```
+
+Whitespace within the `'''` delimiters is preserved exactly as written,
+including newlines and indentation. Leading and trailing newlines and carriage
+returns are automatically trimmed to provide clean configuration values.
+
 More information for users here:
 https://github.com/basho/cuttlefish/wiki/Cuttlefish-for-Application-Users
 
