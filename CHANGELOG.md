@@ -2,7 +2,7 @@
 
 ## v3.6.0 (in development)
 
-No changes yet.
+ * Support for multiline string values #63 by @lukebakken in https://github.com/Kyorai/cuttlefish/pull/63
 
 
 ## v3.5.0
