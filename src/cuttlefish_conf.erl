@@ -437,7 +437,7 @@ multiline_eof_test() ->
 multiline_unicode_test() ->
     Conf = normalize_newlines(file("test/multiline_unicode.conf")),
     ?assertEqual(1, length(Conf)),
-    ?assertMatch([{["greeting"], "Hello 世界! 🌍\nЗдравствуй мир!\nمرحبا بالعالم\nこんにちは世界"}], Conf).
+    ?assertMatch([{["greeting"], "Hello 世界! 🌍\nПривіт, світ!\nПривет, мир!\nمرحبا بالعالم\nこんにちは世界"}], Conf).
 
 duplicates_test() ->
     Conf = file("test/multi1.conf"),
