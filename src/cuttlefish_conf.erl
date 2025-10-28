@@ -351,6 +351,31 @@ generate_comments_test() ->
     Comments = generate_comments(SchemaElement),
     ?assertEqual(["## Hi!", "## Bye!", "## ", "## Acceptable values:", "##   - text"], Comments).
 
+utf8_bom_test() ->
+    Conf = normalize_newlines(file("test/utf8_bom.conf")),
+    ?assertEqual(1, length(Conf)),
+    ?assertMatch([{["foo"],"bar"}], Conf).
+
+utf16_be_bom_test() ->
+    Conf = normalize_newlines(file("test/utf16_be_bom.conf")),
+    ?assertEqual(1, length(Conf)),
+    ?assertMatch([{["foo"],"bar"}], Conf).
+
+utf16_le_bom_test() ->
+    Conf = normalize_newlines(file("test/utf16_le_bom.conf")),
+    ?assertEqual(1, length(Conf)),
+    ?assertMatch([{["foo"],"bar"}], Conf).
+
+utf32_be_bom_test() ->
+    Conf = normalize_newlines(file("test/utf32_be_bom.conf")),
+    ?assertEqual(1, length(Conf)),
+    ?assertMatch([{["foo"],"bar"}], Conf).
+
+utf32_le_bom_test() ->
+    Conf = normalize_newlines(file("test/utf32_le_bom.conf")),
+    ?assertEqual(1, length(Conf)),
+    ?assertMatch([{["foo"],"bar"}], Conf).
+
 normalize_newlines(Conf) ->
     normalize_newlines(Conf, {os_type, os:type()}).
 

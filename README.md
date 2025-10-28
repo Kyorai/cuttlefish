@@ -148,21 +148,19 @@ Cuttlefish is ready for production deployments.
 
 ## Re-generating parser
 
+To regenerate the parser from the PEG grammar:
+
+```
+rebar3 as dev neotoma compile
+```
+
+**IMPORTANT**:
+
 After using Neotoma Rebar3 plugin to re-generate conf_parse.erl, you **MUST**
 edit that file to change the exported `file/1` function to this code:
 
 ``` erl
 -spec file(file:name()) -> any().
 file(Filename) ->
-     AbsFilename = filename:absname(Filename),
-     case erl_prim_loader:get_file(AbsFilename) of
-         {ok, Bin, _} -> parse(Bin);
-         error -> {error, undefined}
-     end.
-```
-
-To regenerate the parser from the PEG grammar:
-
-```
-rebar3 as dev neotoma compile
+    cuttlefish_util:read_and_parse_file(Filename, fun parse/1).
 ```

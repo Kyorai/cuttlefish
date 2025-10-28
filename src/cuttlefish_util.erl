@@ -28,6 +28,7 @@
 -endif.
 
 -export([
+    read_and_parse_file/2,
     replace_proplist_value/3,
     numerify/1,
     ceiling/1,
@@ -42,6 +43,16 @@
      fuzzy_variable_match/2
 ]).
 
+-spec read_and_parse_file(Filename :: file:name_all(),
+                          ParseFun :: fun((binary()) -> any())) -> any().
+read_and_parse_file(Filename, ParseFun) ->
+    AbsFilename = filename:absname(Filename),
+    case erl_prim_loader:get_file(AbsFilename) of
+        {ok, Bin, _} ->
+            ParseFun(strip_bom(Bin));
+        error ->
+            {error, undefined}
+    end.
 
 %% @deprecated
 conf_get_value(Key, Conf) ->
@@ -132,6 +143,14 @@ levenshtein_distlist([], _, _, NewDistList, _) ->
 dif(C, C) -> 0;
 dif(_, _) -> 1.
 
+%% Strip Unicode BOM (Byte Order Mark) from beginning of binary
+strip_bom(<<239, 187, 191, Rest/binary>>) -> Rest;  % UTF-8
+strip_bom(<<254, 255, Rest/binary>>) -> Rest;       % UTF-16 BE
+strip_bom(<<255, 254, 0, 0, Rest/binary>>) -> Rest; % UTF-32 LE
+strip_bom(<<255, 254, Rest/binary>>) -> Rest;       % UTF-16 LE
+strip_bom(<<0, 0, 254, 255, Rest/binary>>) -> Rest; % UTF-32 BE
+strip_bom(Bin) -> Bin.
+
 -ifdef(TEST).
 
 replace_proplist_value_test() ->
@@ -184,6 +203,17 @@ numerify_test() ->
     ?assertEqual(42, numerify("42")),
     ?assertEqual(42.0, numerify("42.0")),
     ?assertEqual(0.5, numerify(".5")),
+    ok.
+
+strip_bom_test() ->
+    Content = <<"foo = bar">>,
+    ?assertEqual(Content, strip_bom(Content)),
+    ?assertEqual(Content, strip_bom(<<(unicode:encoding_to_bom(utf8))/binary, Content/binary>>)),
+    ?assertEqual(Content, strip_bom(<<(unicode:encoding_to_bom(utf16))/binary, Content/binary>>)),
+    ?assertEqual(Content, strip_bom(<<(unicode:encoding_to_bom({utf16, big}))/binary, Content/binary>>)),
+    ?assertEqual(Content, strip_bom(<<(unicode:encoding_to_bom({utf16, little}))/binary, Content/binary>>)),
+    ?assertEqual(Content, strip_bom(<<(unicode:encoding_to_bom({utf32, big}))/binary, Content/binary>>)),
+    ?assertEqual(Content, strip_bom(<<(unicode:encoding_to_bom({utf32, little}))/binary, Content/binary>>)),
     ok.
 
 -endif.
