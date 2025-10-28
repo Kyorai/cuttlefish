@@ -62,13 +62,26 @@ print_help() ->
     stop_deactivate().
 
 parse_and_command(Args) ->
-    {ParsedArgs, Extra} = case getopt:parse(cli_options(), Args) of
-        {ok, {P, H}} -> {P, H};
-        _ -> {[help], []}
+    {ParsedArgs, Extra, ParseError} = case getopt:parse(cli_options(), Args) of
+        {ok, {P, H}} -> {P, H, false};
+        {error, {Reason, Data}} ->
+            io:format(standard_error, "Error parsing arguments: ~p ~p~n~n", [Reason, Data]),
+            {[], [], true};
+        _ ->
+            io:format(standard_error, "Error parsing arguments~n~n", []),
+            {[], [], true}
     end,
-    {Command, ExtraArgs} = case {lists:member(help, ParsedArgs), Extra} of
-        {false, []} -> {generate, []};
-        {false, [Cmd|E]} -> {list_to_atom(Cmd), E};
+    {Command, ExtraArgs} = case {ParseError, lists:member(help, ParsedArgs), Extra} of
+        {true, _, _} -> {help, []};
+        {false, false, []} -> {generate, []};
+        {false, false, [Cmd|E]} ->
+            try
+                {list_to_existing_atom(Cmd), E}
+            catch
+                error:badarg ->
+                    io:format(standard_error, "Unknown command: ~s~n~n", [Cmd]),
+                    {help, []}
+            end;
         _ -> {help, []}
     end,
     {Command, ParsedArgs, ExtraArgs}.
@@ -77,7 +90,17 @@ parse_and_command(Args) ->
 main(Args) ->
     {Command, ParsedArgs, Extra} = parse_and_command(Args),
 
-    SuggestedLogLevel = list_to_atom(proplists:get_value(log_level, ParsedArgs, "notice")),
+    %% Ensure we always have a valid log level, even if parsing failed
+    SuggestedLogLevel = case proplists:get_value(log_level, ParsedArgs) of
+        undefined -> notice;
+        Level when is_list(Level) ->
+            try
+                list_to_existing_atom(Level)
+            catch
+                error:badarg -> notice
+            end;
+        Level when is_atom(Level) -> Level
+    end,
     LogLevel = case lists:member(SuggestedLogLevel, [debug, info, notice, warning, error, critical, alert, emergency]) of
         true -> SuggestedLogLevel;
         _ -> notice
@@ -108,9 +131,7 @@ main(Args) ->
         effective ->
             effective(ParsedArgs);
         describe ->
-            describe(ParsedArgs, Extra);
-        _Other ->
-            print_help()
+            describe(ParsedArgs, Extra)
     end.
 
 %% This shows the effective configuration, including defaults
