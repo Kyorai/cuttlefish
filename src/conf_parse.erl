@@ -182,11 +182,7 @@ gh_1_three_tab_test() ->
 
 -spec file(file:name()) -> any().
 file(Filename) ->
-    AbsFilename = filename:absname(Filename),
-    case erl_prim_loader:get_file(AbsFilename) of
-        {ok, Bin, _} -> parse(Bin);
-        error -> {error, undefined}
-    end.
+    cuttlefish_util:read_and_parse_file(Filename, fun parse/1).
 
 -spec parse(binary() | list()) -> any().
 parse(List) when is_list(List) ->
