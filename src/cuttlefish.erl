@@ -33,9 +33,11 @@
     conf_get/3,
     unset/0,
     invalid/1,
+    invalid/2,
     otp/2,
     otp/3,
-    warn/1
+    warn/1,
+    warn/2
 ]).
 
 % @doc If DesiredMinimum =&lt; the OTP you're running, then return
@@ -121,11 +123,23 @@ unset() ->
 invalid(Reason) ->
     throw({invalid, Reason}).
 
+%% @doc When called inside a translation, informs the user that input
+%% configuration is invalid, using the supplied format string and arguments.
+-spec invalid(io:format(), [term()]) -> no_return().
+invalid(Fmt, Args) when is_list(Args) ->
+    invalid(lists:flatten(io_lib:format(Fmt, Args))).
+
 %% @doc When called inside a translation, results in a warning message
 %% being logged.
 -spec warn(iodata()) -> ok.
 warn(Str) ->
     _ = ?LOG_WARNING(Str, []).
+
+%% @doc When called inside a translation, results in a warning message
+%% being logged.
+-spec warn(io:format(), [term()]) -> ok.
+warn(Fmt, Args) when is_list(Args) ->
+    _ = ?LOG_WARNING(Fmt, Args).
 
 -ifdef(TEST).
 
