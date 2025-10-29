@@ -103,12 +103,9 @@ ceiling(X) ->
 
 %% Levenshtein code by Adam Lindberg, Fredrik Svensson via
 %% http://www.trapexit.org/String_similar_to_(Levenshtein)
-%%
-%%------------------------------------------------------------------------------
-%% @spec levenshtein(StringA :: string(), StringB :: string()) -> integer()
+
 %% @doc Calculates the Levenshtein distance between two strings
-%% @end
-%%------------------------------------------------------------------------------
+-spec levenshtein(string(), string()) -> non_neg_integer().
 levenshtein(Samestring, Samestring) -> 0;
 levenshtein(String, []) -> length(String);
 levenshtein([], String) -> length(String);
