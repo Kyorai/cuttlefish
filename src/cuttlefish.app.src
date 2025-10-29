@@ -1,6 +1,6 @@
 {application,cuttlefish,
              [{description,"cuttlefish configuration abstraction"},
-              {vsn,"3.5.0"},
+              {vsn,"3.6.0"},
               {registered,[]},
               {applications,[kernel,stdlib]},
               {env,[]},
