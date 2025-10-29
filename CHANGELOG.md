@@ -1,33 +1,67 @@
 # Changelog
 
-## v3.6.0 (in development)
+## [v3.6.0](https://github.com/Kyorai/cuttlefish/tree/v3.6.0) (2025-10-29)
 
- * Support for multiline string values #63 by @lukebakken in https://github.com/Kyorai/cuttlefish/pull/63
+[Full Changelog](https://github.com/Kyorai/cuttlefish/compare/v3.5.0...v3.6.0)
 
+**Closed issues:**
 
-## v3.5.0
+- Support multi-line values [\#60](https://github.com/Kyorai/cuttlefish/issues/60)
+- 4.0.0 [\#55](https://github.com/Kyorai/cuttlefish/issues/55)
+- Improve error reporting when an unsupported option is provided [\#44](https://github.com/Kyorai/cuttlefish/issues/44)
+- Update EDoc usage [\#36](https://github.com/Kyorai/cuttlefish/issues/36)
+- Consider detecting Unicode BOM marks in conf files [\#32](https://github.com/Kyorai/cuttlefish/issues/32)
 
-* Parse tagged value tag up to the first colon #56 by @michaelklishin in https://github.com/Kyorai/cuttlefish/pull/57
-* Restrict what characters tagged value prefixes (tags) are allowed to have by @michaelklishin in https://github.com/Kyorai/cuttlefish/pull/58
+**Merged pull requests:**
 
-**Full Changelog**: https://github.com/Kyorai/cuttlefish/compare/v3.4.0...v3.5.0
+- Provide more informative output [\#66](https://github.com/Kyorai/cuttlefish/pull/66) ([lukebakken](https://github.com/lukebakken))
+- Fix edoc warning [\#65](https://github.com/Kyorai/cuttlefish/pull/65) ([lukebakken](https://github.com/lukebakken))
+- Handle conf files that start with unicode BOM [\#64](https://github.com/Kyorai/cuttlefish/pull/64) ([lukebakken](https://github.com/lukebakken))
+- Support multiline configuration values [\#63](https://github.com/Kyorai/cuttlefish/pull/63) ([lukebakken](https://github.com/lukebakken))
+- GitHub actions workflow updates [\#61](https://github.com/Kyorai/cuttlefish/pull/61) ([lukebakken](https://github.com/lukebakken))
 
-## [v3.4.0](https://github.com/Kyorai/cuttlefish/tree/v3.4.0)
+## [v3.5.0](https://github.com/Kyorai/cuttlefish/tree/v3.5.0) (2025-08-11)
 
-* New data types: "plain" binary, tagged binary by @michaelklishin in https://github.com/Kyorai/cuttlefish/pull/52
+[Full Changelog](https://github.com/Kyorai/cuttlefish/compare/v3.4.0...v3.5.0)
 
-**Full Changelog**: https://github.com/Kyorai/cuttlefish/compare/v3.3.0...v3.4.0
+**Closed issues:**
 
-## [v3.3.0](https://github.com/Kyorai/cuttlefish/tree/v3.3.0)
+- Colons in generated values are not parsed the way the user expects them to be [\#56](https://github.com/Kyorai/cuttlefish/issues/56)
+- \[bug\] Tag 2.0.1 conflicts with basho repo, obstructing synchronization [\#54](https://github.com/Kyorai/cuttlefish/issues/54)
 
-* Don't fail with an 'undefined' log level by @michaelklishin in https://github.com/Kyorai/cuttlefish/pull/45
-* New data type: tagged string by @michaelklishin in https://github.com/Kyorai/cuttlefish/pull/46
-* Grammar: require a space after the "include" directive by @michaelklishin in https://github.com/Kyorai/cuttlefish/pull/47
-* Support for 'escaped values' by @michaelklishin in https://github.com/Kyorai/cuttlefish/pull/48
-* Require Erlang/OTP 24.x by @michaelklishin in https://github.com/Kyorai/cuttlefish/pull/49
-* Bump getopt to 1.0.3 by @michaelklishin in https://github.com/Kyorai/cuttlefish/pull/50
+**Merged pull requests:**
 
-**Full Changelog**: https://github.com/Kyorai/cuttlefish/compare/v3.2.0...v3.3.0
+- Restrict what characters tagged value prefixes \(tags\) are allowed to have [\#58](https://github.com/Kyorai/cuttlefish/pull/58) ([michaelklishin](https://github.com/michaelklishin))
+- Parse tagged value tag up to the first colon \#56 [\#57](https://github.com/Kyorai/cuttlefish/pull/57) ([michaelklishin](https://github.com/michaelklishin))
+
+## [v3.4.0](https://github.com/Kyorai/cuttlefish/tree/v3.4.0) (2024-08-06)
+
+[Full Changelog](https://github.com/Kyorai/cuttlefish/compare/v3.3.0...v3.4.0)
+
+**Merged pull requests:**
+
+- New data types: "plain" binary, tagged binary [\#52](https://github.com/Kyorai/cuttlefish/pull/52) ([michaelklishin](https://github.com/michaelklishin))
+
+## [v3.3.0](https://github.com/Kyorai/cuttlefish/tree/v3.3.0) (2024-08-06)
+
+[Full Changelog](https://github.com/Kyorai/cuttlefish/compare/v3.2.0...v3.3.0)
+
+**Closed issues:**
+
+- Proposal: Support for Secrets via Tagged or Term Values [\#40](https://github.com/Kyorai/cuttlefish/issues/40)
+- Include statement lacks whitespace before path [\#38](https://github.com/Kyorai/cuttlefish/issues/38)
+- \[Feature request\] Provide a way to do character/string escaping [\#37](https://github.com/Kyorai/cuttlefish/issues/37)
+
+**Merged pull requests:**
+
+- Bump getopt to 1.0.3 [\#50](https://github.com/Kyorai/cuttlefish/pull/50) ([michaelklishin](https://github.com/michaelklishin))
+- Require Erlang/OTP 24.x [\#49](https://github.com/Kyorai/cuttlefish/pull/49) ([michaelklishin](https://github.com/michaelklishin))
+- Support for 'escaped values' [\#48](https://github.com/Kyorai/cuttlefish/pull/48) ([michaelklishin](https://github.com/michaelklishin))
+- Grammar: require a space after the "include" directive [\#47](https://github.com/Kyorai/cuttlefish/pull/47) ([michaelklishin](https://github.com/michaelklishin))
+- New data type: tagged string [\#46](https://github.com/Kyorai/cuttlefish/pull/46) ([michaelklishin](https://github.com/michaelklishin))
+- Don't fail with an 'undefined' log level [\#45](https://github.com/Kyorai/cuttlefish/pull/45) ([michaelklishin](https://github.com/michaelklishin))
+- Actions: use Rebar 3.23, drop testing on Erlang 23 [\#43](https://github.com/Kyorai/cuttlefish/pull/43) ([michaelklishin](https://github.com/michaelklishin))
+- Re-arrange some tests [\#41](https://github.com/Kyorai/cuttlefish/pull/41) ([michaelklishin](https://github.com/michaelklishin))
 
 ## [v3.2.0](https://github.com/Kyorai/cuttlefish/tree/v3.2.0) (2023-02-13)
 
@@ -195,11 +229,7 @@
 
 ## [2.0.2p2](https://github.com/Kyorai/cuttlefish/tree/2.0.2p2) (2016-03-03)
 
-[Full Changelog](https://github.com/Kyorai/cuttlefish/compare/2.0.1...2.0.2p2)
-
-## [2.0.1](https://github.com/Kyorai/cuttlefish/tree/2.0.1) (2016-02-12)
-
-[Full Changelog](https://github.com/Kyorai/cuttlefish/compare/2.0.6...2.0.1)
+[Full Changelog](https://github.com/Kyorai/cuttlefish/compare/2.0.6...2.0.2p2)
 
 ## [2.0.6](https://github.com/Kyorai/cuttlefish/tree/2.0.6) (2016-02-03)
 
@@ -240,7 +270,3 @@
 ## [0.1.0](https://github.com/Kyorai/cuttlefish/tree/0.1.0) (2013-10-16)
 
 [Full Changelog](https://github.com/Kyorai/cuttlefish/compare/b43aa2d590727f6e7a0e2a330758161b296760f3...0.1.0)
-
-
-
-\* *This Changelog was automatically generated by [github_changelog_generator](https://github.com/github-changelog-generator/github-changelog-generator)*
