@@ -208,6 +208,30 @@ probably_the_most_important_test() ->
     ?assertEqual("## [{app,[{setting3,\"z\"},{setting4,\"zz\"}]}]", lists:nth(16, Effective)),
     ok.
 
+alias_resolved_in_effective_test() ->
+    Mappings = [
+        cuttlefish_mapping:parse(
+            {mapping, "new.key", "app.setting", [
+                {default, "default_val"},
+                {aliases, ["old.key"]}
+            ]}
+        )
+    ],
+    %% Only alias set: alias value appears under canonical key
+    Conf1 = [{["old", "key"], "alias_val"}],
+    Effective1 = build(Conf1, {[], Mappings, []}, []),
+    ?assert(lists:member("new.key = alias_val", Effective1)),
+    ?assertNot(lists:any(
+        fun(Line) -> string:find(Line, "old.key") =/= nomatch end,
+        Effective1)),
+    %% Both set: the canonical key wins, alias does not appear
+    Conf2 = [{["new", "key"], "canonical_val"}, {["old", "key"], "alias_val"}],
+    Effective2 = build(Conf2, {[], Mappings, []}, []),
+    ?assert(lists:member("new.key = canonical_val", Effective2)),
+    ?assertNot(lists:any(
+        fun(Line) -> string:find(Line, "old.key") =/= nomatch end,
+        Effective2)).
+
 process_advanced_test() ->
     Mappings = [
         cuttlefish_mapping:parse(

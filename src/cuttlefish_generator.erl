@@ -61,7 +61,11 @@ minimal_map({AllTranslations,AllMappings,V}, Config) ->
     map({RestrictedTranslations,RestrictedMappings,V}, Config, []).
 
 restrict_mappings(M, {Mappings, Keys}, ConfigKeys) ->
-    case sets:is_element(cuttlefish_mapping:variable(M), ConfigKeys) of
+    Variable = cuttlefish_mapping:variable(M),
+    Aliases = cuttlefish_mapping:aliases(M),
+    HasMatch = sets:is_element(Variable, ConfigKeys) orelse
+               lists:any(fun(A) -> sets:is_element(A, ConfigKeys) end, Aliases),
+    case HasMatch of
         true ->
             {[M|Mappings], sets:add_element(cuttlefish_mapping:mapping(M), Keys)};
         false ->
@@ -75,10 +79,10 @@ map_add_defaults({_, Mappings, _} = Schema, Config, ParsedArgs) ->
     %% Config at this point is just what's in the .conf file.
     %% First resolve any aliases to their canonical keys
     _ = ?LOG_DEBUG("Resolving Aliases"),
-    AConfig = resolve_aliases(Config, Mappings),
+    AliasResolvedConfig = resolve_aliases(Config, Mappings),
     %% add_defaults/2 rolls the default values in from the schema
     _ = ?LOG_DEBUG("Adding Defaults"),
-    DConfig = add_defaults(AConfig, Mappings),
+    DConfig = add_defaults(AliasResolvedConfig, Mappings),
     case cuttlefish_error:errorlist_maybe(DConfig) of
         {errorlist, EList} ->
             {error, add_defaults, {errorlist, EList}};
@@ -268,22 +272,22 @@ set_value([HeadToken|MoreTokens], PList, NewValue) ->
         PList).
 
 %% @doc Resolves alias keys to their canonical keys.
-%% For each mapping with aliases, if an alias key is present in Conf:
-%% - If canonical is also set: drop alias with warning
-%% - If canonical is not set: rewrite alias to canonical with warning
+%% Alias values are rewritten to the canonical key with a deprecation warning.
+%% Canonical takes precedence. If multiple aliases are set, the first one
+%% listed in the mapping's `aliases' property wins. Every set alias warns.
 -spec resolve_aliases(cuttlefish_conf:conf(), [cuttlefish_mapping:mapping()]) ->
     cuttlefish_conf:conf().
 resolve_aliases(Conf, Mappings) ->
     lists:foldl(fun(Mapping, ConfAcc) ->
         case cuttlefish_mapping:aliases(Mapping) of
             [] -> ConfAcc;
-            Aliases -> resolve_mapping_aliases(Mapping, Aliases, ConfAcc)
+            Aliases -> resolve_aliases_for_single_mapping(Mapping, Aliases, ConfAcc)
         end
     end, Conf, Mappings).
 
-resolve_mapping_aliases(Mapping, Aliases, Conf) ->
+resolve_aliases_for_single_mapping(Mapping, Aliases, Conf) ->
     Canonical = cuttlefish_mapping:variable(Mapping),
-    CanonicalFmt = cuttlefish_variable:format(Canonical),
+    CanonicalStr = cuttlefish_variable:format(Canonical),
     lists:foldl(fun(AliasVar, ConfAcc) ->
         %% Recheck on every iteration: a previous alias in this
         %% fold may have inserted the canonical key.
@@ -292,14 +296,14 @@ resolve_mapping_aliases(Mapping, Aliases, Conf) ->
             false ->
                 ConfAcc;
             {_, _} when CanonicalSet ->
-                AliasFmt = cuttlefish_variable:format(AliasVar),
+                AliasStr = cuttlefish_variable:format(AliasVar),
                 _ = ?LOG_WARNING("~ts is deprecated and ignored "
-                             "in favor of ~ts", [AliasFmt, CanonicalFmt]),
+                             "in favor of ~ts", [AliasStr, CanonicalStr]),
                 lists:keydelete(AliasVar, 1, ConfAcc);
             {_, Value} ->
-                AliasFmt = cuttlefish_variable:format(AliasVar),
+                AliasStr = cuttlefish_variable:format(AliasVar),
                 _ = ?LOG_WARNING("~ts is deprecated, use ~ts instead",
-                             [AliasFmt, CanonicalFmt]),
+                             [AliasStr, CanonicalStr]),
                 [{Canonical, Value} | lists:keydelete(AliasVar, 1, ConfAcc)]
         end
     end, Conf, Aliases).
@@ -1346,6 +1350,10 @@ resolve_alias_multiple_first_wins_test() ->
     Resolved = resolve_aliases(Conf, [Mapping]),
     ?assertEqual([{["new", "key"], "1"}], Resolved).
 
+resolve_alias_empty_mappings_test() ->
+    Conf = [{["a", "b"], "val"}],
+    ?assertEqual(Conf, resolve_aliases(Conf, [])).
+
 resolve_alias_no_aliases_passthrough_test() ->
     Mapping = cuttlefish_mapping:parse({mapping, "a.b", "app.x", [
         {datatype, string}
@@ -1385,7 +1393,8 @@ resolve_alias_warns_on_deprecated_key_test() ->
     ]}),
     _ = resolve_aliases([{["old", "key"], "42"}], [Mapping]),
     [Log] = cuttlefish_test_logging:get_logs(),
-    ?assertMatch({match, _}, re:run(Log, "old\\.key.*deprecated.*new\\.key")).
+    ?assertMatch({match, _},
+        re:run(Log, "old\\.key is deprecated, use new\\.key instead")).
 
 resolve_alias_warns_on_ignored_key_test() ->
     _ = cuttlefish_test_logging:set_up(),
@@ -1395,7 +1404,8 @@ resolve_alias_warns_on_ignored_key_test() ->
     ]}),
     _ = resolve_aliases([{["new", "key"], "1"}, {["old", "key"], "2"}], [Mapping]),
     [Log] = cuttlefish_test_logging:get_logs(),
-    ?assertMatch({match, _}, re:run(Log, "old\\.key.*deprecated.*ignored")).
+    ?assertMatch({match, _},
+        re:run(Log, "old\\.key is deprecated and ignored in favor of new\\.key")).
 
 resolve_alias_multiple_all_warn_test() ->
     _ = cuttlefish_test_logging:set_up(),
@@ -1465,5 +1475,61 @@ alias_validation_runs_test() ->
     Conf = [{["old", "key"], "-5"}],
     Result = map(Schema, Conf),
     ?assertMatch({error, validation, _}, Result).
+
+minimal_map_resolves_alias_test() ->
+    Schema = cuttlefish_schema:strings([
+        "{mapping, \"new.key\", \"app.setting\", [\n"
+        "  {datatype, integer},\n"
+        "  {default, 10},\n"
+        "  {aliases, [\"old.key\"]}\n"
+        "]}.\n"
+    ]),
+    Conf = [{["old", "key"], "42"}],
+    Result = minimal_map(Schema, Conf),
+    ?assertEqual(42, proplists:get_value(setting, proplists:get_value(app, Result))).
+
+minimal_map_excludes_mapping_without_alias_or_canonical_test() ->
+    Schema = cuttlefish_schema:strings([
+        "{mapping, \"new.key\", \"app.setting\", [\n"
+        "  {datatype, integer},\n"
+        "  {default, 10},\n"
+        "  {aliases, [\"old.key\"]}\n"
+        "]}.\n"
+    ]),
+    %% Neither canonical nor alias in config — mapping should be excluded
+    Result = minimal_map(Schema, []),
+    ?assertEqual([], Result).
+
+%% RHS substitutions reference the canonical key, not the alias.
+%% $(old.key) won't resolve after alias rewriting — use $(new.key).
+rhs_substitution_uses_canonical_not_alias_test() ->
+    Schema = cuttlefish_schema:strings([
+        "{mapping, \"new.key\", \"app.a\", [\n"
+        "  {datatype, string},\n"
+        "  {aliases, [\"old.key\"]}\n"
+        "]}.\n"
+        "{mapping, \"other\", \"app.b\", [\n"
+        "  {datatype, string}\n"
+        "]}.\n"
+    ]),
+    %% $(new.key) works after alias resolution
+    Conf = [{["old", "key"], "hello"}, {["other"], "$(new.key)/world"}],
+    Result = map(Schema, Conf),
+    ?assertEqual("hello/world", proplists:get_value(b, proplists:get_value(app, Result))).
+
+rhs_substitution_of_alias_key_fails_test() ->
+    Schema = cuttlefish_schema:strings([
+        "{mapping, \"new.key\", \"app.a\", [\n"
+        "  {datatype, string},\n"
+        "  {aliases, [\"old.key\"]}\n"
+        "]}.\n"
+        "{mapping, \"other\", \"app.b\", [\n"
+        "  {datatype, string}\n"
+        "]}.\n"
+    ]),
+    %% $(old.key) fails because the alias has been rewritten
+    Conf = [{["old", "key"], "hello"}, {["other"], "$(old.key)/world"}],
+    Result = map(Schema, Conf),
+    ?assertMatch({error, rhs_subs, _}, Result).
 
 -endif.

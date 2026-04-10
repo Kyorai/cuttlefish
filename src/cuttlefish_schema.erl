@@ -111,46 +111,44 @@ filter({Translations, Mappings, Validators}) ->
     case validate_aliases(NewMappings) of
         ok ->
             {Translations, NewMappings, Validators};
-        {error, _} = Error ->
-            {errorlist, [Error]}
+        {errorlist, _} = Errors ->
+            Errors
     end.
 
 %% @doc Validates that aliases don't collide with other mappings' canonical
 %% variables or with aliases from other mappings.
--spec validate_aliases([cuttlefish_mapping:mapping()]) -> ok | cuttlefish_error:error().
+-spec validate_aliases([cuttlefish_mapping:mapping()]) ->
+    ok | cuttlefish_error:errorlist().
 validate_aliases(Mappings) ->
-    %% Build an index of all canonical variables
-    CanonicalVars = [{cuttlefish_mapping:variable(M), M} || M <- Mappings],
-    %% Build an index of all aliases -> owning mapping
-    AliasIndex = lists:foldl(fun(M, Acc) ->
+    CanonicalVarSet = sets:from_list(
+        [cuttlefish_mapping:variable(M) || M <- Mappings]),
+    AliasIndex = lists:flatmap(fun(M) ->
         Variable = cuttlefish_mapping:variable(M),
-        Aliases = cuttlefish_mapping:aliases(M),
-        lists:foldl(fun(Alias, InnerAcc) ->
-            [{Alias, Variable} | InnerAcc]
-        end, Acc, Aliases)
-    end, [], Mappings),
+        [{Alias, Variable} || Alias <- cuttlefish_mapping:aliases(M)]
+    end, Mappings),
+    collect_alias_collision_errors(AliasIndex, CanonicalVarSet, []).
 
-    %% Check for collisions
-    validate_alias_collisions(AliasIndex, CanonicalVars, AliasIndex).
-
-validate_alias_collisions([], _CanonicalVars, _AllAliases) ->
+collect_alias_collision_errors([], _CanonicalVarSet, []) ->
     ok;
-validate_alias_collisions([{Alias, OwnerVar} | Rest], CanonicalVars, AllAliases) ->
-    %% Check if alias collides with a canonical variable
-    case lists:keyfind(Alias, 1, CanonicalVars) of
-        {Alias, CollidingMapping} ->
-            CollidingVar = cuttlefish_mapping:variable(CollidingMapping),
-            {error, {alias_collision, {Alias, OwnerVar, CollidingVar}}};
+collect_alias_collision_errors([], _CanonicalVarSet, Errors) ->
+    {errorlist, lists:reverse(Errors)};
+collect_alias_collision_errors([{Alias, OwnerVar} | Rest], CanonicalVarSet, Errors) ->
+    AliasStr = cuttlefish_variable:format(Alias),
+    OwnerStr = cuttlefish_variable:format(OwnerVar),
+    NewErrors = case sets:is_element(Alias, CanonicalVarSet) of
+        true ->
+            [{error, {alias_shadows_canonical, {AliasStr, OwnerStr}}} | Errors];
         false ->
-            %% Check if alias collides with another mapping's alias
-            OtherAliases = [{A, V} || {A, V} <- AllAliases, V =/= OwnerVar],
-            case lists:keyfind(Alias, 1, OtherAliases) of
+            OtherMappingAliases = [{A, V} || {A, V} <- Rest, V =/= OwnerVar],
+            case lists:keyfind(Alias, 1, OtherMappingAliases) of
                 {Alias, OtherOwnerVar} ->
-                    {error, {alias_collision, {Alias, OwnerVar, OtherOwnerVar}}};
+                    OtherStr = cuttlefish_variable:format(OtherOwnerVar),
+                    [{error, {alias_claimed_by_multiple_mappings, {AliasStr, OwnerStr, OtherStr}}} | Errors];
                 false ->
-                    validate_alias_collisions(Rest, CanonicalVars, AllAliases)
+                    Errors
             end
-    end.
+    end,
+    collect_alias_collision_errors(Rest, CanonicalVarSet, NewErrors).
 
 count_mappings(Mappings) ->
     lists:foldl(
@@ -555,19 +553,31 @@ merge_across_multiple_schemas_test() ->
 
 %% Alias collision tests
 
-alias_collision_with_canonical_test() ->
-    %% Alias collides with another mapping's canonical variable
+alias_shadows_canonical_test() ->
     String = "{mapping, \"a.b\", \"e.k\", [{aliases, [\"c.d\"]}]}.\n"
           ++ "{mapping, \"c.d\", \"e.j\", []}.\n",
     Result = strings([String]),
-    ?assertMatch({errorlist, [{error, {alias_collision, _}}]}, Result).
+    ?assertMatch({errorlist, [{error, {alias_shadows_canonical, {"c.d", "a.b"}}}]}, Result).
 
-alias_collision_between_aliases_test() ->
-    %% Same alias claimed by two different mappings
+alias_claimed_by_multiple_mappings_test() ->
     String = "{mapping, \"a.b\", \"e.k\", [{aliases, [\"old.key\"]}]}.\n"
           ++ "{mapping, \"c.d\", \"e.j\", [{aliases, [\"old.key\"]}]}.\n",
     Result = strings([String]),
-    ?assertMatch({errorlist, [{error, {alias_collision, _}}]}, Result).
+    ?assertMatch({errorlist,
+        [{error, {alias_claimed_by_multiple_mappings, {"old.key", "a.b", "c.d"}}}]}, Result).
+
+alias_multiple_collisions_reported_test() ->
+    %% Two independent shadow collisions: both should be reported
+    String = "{mapping, \"a.b\", \"e.k\", [{aliases, [\"old.x\"]}]}.\n"
+          ++ "{mapping, \"c.d\", \"e.j\", [{aliases, [\"old.y\"]}]}.\n"
+          ++ "{mapping, \"old.x\", \"e.m\", []}.\n"
+          ++ "{mapping, \"old.y\", \"e.n\", []}.\n",
+    {errorlist, Errors} = strings([String]),
+    ?assertEqual(2, length(Errors)),
+    ?assert(lists:any(fun({error, {alias_shadows_canonical, {"old.x", _}}}) -> true;
+                         (_) -> false end, Errors)),
+    ?assert(lists:any(fun({error, {alias_shadows_canonical, {"old.y", _}}}) -> true;
+                         (_) -> false end, Errors)).
 
 alias_no_collision_test() ->
     %% Different aliases, no collision
@@ -583,5 +593,16 @@ alias_no_collision_same_mapping_test() ->
     ?assertEqual(1, length(Mappings)),
     [M] = Mappings,
     ?assertEqual([["old", "ab"], ["older", "ab"]], cuttlefish_mapping:aliases(M)).
+
+alias_singular_from_schema_string_test() ->
+    String = "{mapping, \"new.key\", \"app.setting\", [{alias, \"old.key\"}]}.\n",
+    {_, [M], _} = strings([String]),
+    ?assertEqual([["old", "key"]], cuttlefish_mapping:aliases(M)).
+
+alias_shadows_canonical_across_schema_strings_test() ->
+    Schema1 = "{mapping, \"a.b\", \"e.k\", [{aliases, [\"old.key\"]}]}.\n",
+    Schema2 = "{mapping, \"old.key\", \"e.j\", []}.\n",
+    Result = strings([Schema1, Schema2]),
+    ?assertMatch({errorlist, [{error, {alias_shadows_canonical, {"old.key", "a.b"}}}]}, Result).
 
 -endif.
