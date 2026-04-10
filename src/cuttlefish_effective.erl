@@ -31,7 +31,8 @@
 
 -spec build(cuttlefish_conf:conf(), cuttlefish_schema:schema(), [proplists:property()]) -> [string()].
 build(Conf, {_Translations, Mappings, _Validators} = _Schema, AdvConfig) ->
-    EffectiveConfig = lists:reverse(lists:sort(cuttlefish_generator:add_defaults(Conf, Mappings))),
+    AliasResolvedConf = cuttlefish_generator:resolve_aliases(Conf, Mappings),
+    EffectiveConfig = lists:reverse(lists:sort(cuttlefish_generator:add_defaults(AliasResolvedConf, Mappings))),
     %% EffectiveConfig is a list of { [string()], term() }
 
     %% Returns the list of cuttlefish variables that have been overridden in advanced.config

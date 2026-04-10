@@ -147,7 +147,19 @@ xlate({erl_parse_unexpected, Error}) ->
 xlate({parse_schema, Value}) ->
     io_lib:format("Unknown parse return: ~tp", [Value]);
 xlate({erl_scan, LineNo}) ->
-    ["Error scanning erlang near line ", integer_to_list(LineNo)].
+    ["Error scanning erlang near line ", integer_to_list(LineNo)];
+xlate({aliases_empty, Variable}) ->
+    io_lib:format("Empty aliases list for mapping ~ts", [Variable]);
+xlate({alias_is_self, Variable}) ->
+    io_lib:format("Alias for ~ts points to itself", [Variable]);
+xlate({fuzzy_alias_unsupported, Variable, Alias}) ->
+    io_lib:format("Fuzzy alias ~ts on mapping ~ts is not supported",
+                  [cuttlefish_variable:format(Alias), Variable]);
+xlate({alias_collision, {Alias, Variable1, Variable2}}) ->
+    io_lib:format("Alias ~ts is claimed by both ~ts and ~ts",
+                  [cuttlefish_variable:format(Alias),
+                   cuttlefish_variable:format(Variable1),
+                   cuttlefish_variable:format(Variable2)]).
 
 -spec contains_error(list()) -> boolean().
 contains_error(List) ->
@@ -217,5 +229,13 @@ errorlist_maybe_test() ->
        ["hi", "what even is an error?", "bye"],
        errorlist_maybe(["hi", "what even is an error?", "bye"])),
     ok.
+
+%% Alias error xlate tests
+
+alias_error_xlate_test() ->
+    ?assertMatch("Empty" ++ _, lists:flatten(xlate({aliases_empty, "a.b"}))),
+    ?assertMatch("Alias" ++ _, lists:flatten(xlate({alias_is_self, "a.b"}))),
+    ?assertMatch("Fuzzy" ++ _, lists:flatten(xlate({fuzzy_alias_unsupported, "a.b", ["old", "$name", "key"]}))),
+    ?assertMatch("Alias" ++ _, lists:flatten(xlate({alias_collision, {["old", "key"], ["a", "b"], ["c", "d"]}}))).
 
 -endif.

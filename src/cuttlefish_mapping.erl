@@ -38,7 +38,8 @@
         validators = [] :: [string()],
         is_merge = false :: boolean(),
         see = [] :: [cuttlefish_variable:variable()],
-        hidden = false :: boolean()
+        hidden = false :: boolean(),
+        aliases = [] :: [cuttlefish_variable:variable()]
     }).
 
 -type mapping() :: #mapping{}.
@@ -65,7 +66,8 @@
     replace/2,
     validators/1,
     validators/2,
-    remove_all_but_first/2
+    remove_all_but_first/2,
+    aliases/1
     ]).
 
 -spec parse(raw_mapping()) -> mapping() | cuttlefish_error:error().
@@ -88,12 +90,18 @@ parse({mapping, Variable, Mapping, Proplist}) ->
         D -> [D]
     end,
 
-    case Datatype of
-        {error, _} ->
+    VarTokenized = cuttlefish_variable:tokenize(Variable),
+    IsMerge = proplists:is_defined(merge, Proplist),
+    AliasesResult = parse_aliases(Variable, VarTokenized, Proplist, IsMerge),
+
+    case {Datatype, AliasesResult} of
+        {{error, _}, _} ->
             Datatype;
-        _ ->
+        {_, {error, _} = AliasError} ->
+            AliasError;
+        {_, TokenizedAliases} ->
             #mapping{
-                variable = cuttlefish_variable:tokenize(Variable),
+                variable = VarTokenized,
                 default = proplists:get_value(default, Proplist),
                 commented = proplists:get_value(commented, Proplist),
                 mapping = Mapping,
@@ -104,11 +112,47 @@ parse({mapping, Variable, Mapping, Proplist}) ->
                 include_default = proplists:get_value(include_default, Proplist),
                 new_conf_value = proplists:get_value(new_conf_value, Proplist),
                 validators = proplists:get_value(validators, Proplist, []),
-                hidden = proplists:get_value(hidden, Proplist, false)
+                hidden = proplists:get_value(hidden, Proplist, false),
+                aliases = TokenizedAliases
             }
     end;
 parse(X) ->
     {error, {mapping_parse, X}}.
+
+-spec parse_aliases(string(), cuttlefish_variable:variable(), [proplists:property()], boolean()) ->
+    [cuttlefish_variable:variable()] | cuttlefish_error:error().
+parse_aliases(Variable, VarTokenized, Proplist, IsMerge) ->
+    case proplists:get_value(aliases, Proplist) of
+        undefined ->
+            [];
+        [] when IsMerge ->
+            [];
+        [] ->
+            {error, {aliases_empty, Variable}};
+        RawAliases when is_list(RawAliases) ->
+            TokenizedAliases = [cuttlefish_variable:tokenize(A) || A <- RawAliases],
+            case lists:member(VarTokenized, TokenizedAliases) of
+                true ->
+                    {error, {alias_is_self, Variable}};
+                false ->
+                    case find_fuzzy_alias(TokenizedAliases) of
+                        {fuzzy, FuzzyAlias} ->
+                            {error, {fuzzy_alias_unsupported, Variable, FuzzyAlias}};
+                        ok ->
+                            TokenizedAliases
+                    end
+            end
+    end.
+
+-spec find_fuzzy_alias([cuttlefish_variable:variable()]) -> ok | {fuzzy, cuttlefish_variable:variable()}.
+find_fuzzy_alias([]) ->
+    ok;
+find_fuzzy_alias([Alias|Rest]) ->
+    IsFuzzy = lists:any(fun([$$|_]) -> true; (_) -> false end, Alias),
+    case IsFuzzy of
+        true -> {fuzzy, Alias};
+        false -> find_fuzzy_alias(Rest)
+    end.
 
 %% If this mapping exists, do something.
 %% That something is usually a simple replace, unless the proplist in
@@ -149,7 +193,8 @@ merge(NewMappingSource, OldMapping) ->
         new_conf_value = choose(include_default, NewMappingSource, MergeMapping, OldMapping),
         validators = choose(validators, NewMappingSource, MergeMapping, OldMapping),
         see = choose(see, NewMappingSource, MergeMapping, OldMapping),
-        hidden = choose(hidden, NewMappingSource, MergeMapping, OldMapping)
+        hidden = choose(hidden, NewMappingSource, MergeMapping, OldMapping),
+        aliases = choose(aliases, NewMappingSource, MergeMapping, OldMapping)
     }.
 
 choose(Field, {_, _, _, PreParseMergeProps}, MergeMapping, OldMapping) ->
@@ -158,6 +203,7 @@ choose(Field, {_, _, _, PreParseMergeProps}, MergeMapping, OldMapping) ->
                   proplists:get_value(Field, PreParseMergeProps)} of
                 {see, _, []} -> old;
                 {doc, _, []} -> old;
+                {aliases, _, []} -> old;
                 {_, true, _} -> new;
                 _ -> old
     end,
@@ -215,6 +261,9 @@ new_conf_value(M) -> M#mapping.new_conf_value.
 
 -spec validators(mapping()) -> [string()].
 validators(M) -> M#mapping.validators.
+
+-spec aliases(mapping()) -> [cuttlefish_variable:variable()].
+aliases(M) -> M#mapping.aliases.
 
 -spec validators(mapping(), [cuttlefish_validator:validator()]) -> [cuttlefish_validator:validator()].
 validators(M, Validators) ->
@@ -540,5 +589,64 @@ datatype_cannot_be_empty_list_test() ->
     }),
     ?assertMatch({error, _}, Mapping),
     ok.
+
+%% Aliases tests
+
+aliases_parse_test() ->
+    M = parse({mapping, "new.key", "app.setting", [
+        {aliases, ["old.key", "older.key"]}
+    ]}),
+    ?assertEqual([["old", "key"], ["older", "key"]], aliases(M)).
+
+aliases_omitted_test() ->
+    M = parse({mapping, "new.key", "app.setting", []}),
+    ?assertEqual([], aliases(M)).
+
+aliases_empty_list_error_test() ->
+    Result = parse({mapping, "a.b", "app.setting", [{aliases, []}]}),
+    ?assertMatch({error, {aliases_empty, _}}, Result).
+
+aliases_self_error_test() ->
+    Result = parse({mapping, "a.b", "app.setting", [{aliases, ["a.b"]}]}),
+    ?assertMatch({error, {alias_is_self, _}}, Result).
+
+aliases_self_among_multiple_error_test() ->
+    Result = parse({mapping, "a.b", "app.setting", [
+        {aliases, ["old.key", "a.b"]}
+    ]}),
+    ?assertMatch({error, {alias_is_self, _}}, Result).
+
+aliases_fuzzy_error_test() ->
+    Result = parse({mapping, "a.b", "app.setting", [
+        {aliases, ["old.$name.key"]}
+    ]}),
+    ?assertMatch({error, {fuzzy_alias_unsupported, _, _}}, Result).
+
+aliases_merge_replaces_test() ->
+    OldM = parse({mapping, "a.b", "app.x", [
+        {default, 1}, {datatype, integer}, {aliases, ["old.ab"]}
+    ]}),
+    NewRaw = {mapping, "a.b", "app.x", [merge, {aliases, ["older.ab"]}]},
+    [Merged] = parse_and_merge(NewRaw, [OldM]),
+    ?assertEqual([["older", "ab"]], aliases(Merged)),
+    ?assertEqual(1, default(Merged)).
+
+aliases_merge_inherits_test() ->
+    OldM = parse({mapping, "a.b", "app.x", [
+        {default, 1}, {datatype, integer}, {aliases, ["old.ab"]}
+    ]}),
+    NewRaw = {mapping, "a.b", "app.x", [merge, {default, 2}]},
+    [Merged] = parse_and_merge(NewRaw, [OldM]),
+    ?assertEqual([["old", "ab"]], aliases(Merged)),
+    ?assertEqual(2, default(Merged)).
+
+aliases_merge_empty_inherits_test() ->
+    %% Empty aliases list in merge mapping should inherit from old
+    OldM = parse({mapping, "a.b", "app.x", [
+        {default, 1}, {aliases, ["old.ab"]}
+    ]}),
+    NewRaw = {mapping, "a.b", "app.x", [merge, {aliases, []}]},
+    [Merged] = parse_and_merge(NewRaw, [OldM]),
+    ?assertEqual([["old", "ab"]], aliases(Merged)).
 
 -endif.

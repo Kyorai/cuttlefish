@@ -108,7 +108,49 @@ filter({Translations, Mappings, Validators}) ->
         end,
         Mappings, MappingsToCheck),
 
-    {Translations, NewMappings, Validators}.
+    case validate_aliases(NewMappings) of
+        ok ->
+            {Translations, NewMappings, Validators};
+        {error, _} = Error ->
+            {errorlist, [Error]}
+    end.
+
+%% @doc Validates that aliases don't collide with other mappings' canonical
+%% variables or with aliases from other mappings.
+-spec validate_aliases([cuttlefish_mapping:mapping()]) -> ok | cuttlefish_error:error().
+validate_aliases(Mappings) ->
+    %% Build an index of all canonical variables
+    CanonicalVars = [{cuttlefish_mapping:variable(M), M} || M <- Mappings],
+    %% Build an index of all aliases -> owning mapping
+    AliasIndex = lists:foldl(fun(M, Acc) ->
+        Variable = cuttlefish_mapping:variable(M),
+        Aliases = cuttlefish_mapping:aliases(M),
+        lists:foldl(fun(Alias, InnerAcc) ->
+            [{Alias, Variable} | InnerAcc]
+        end, Acc, Aliases)
+    end, [], Mappings),
+
+    %% Check for collisions
+    validate_alias_collisions(AliasIndex, CanonicalVars, AliasIndex).
+
+validate_alias_collisions([], _CanonicalVars, _AllAliases) ->
+    ok;
+validate_alias_collisions([{Alias, OwnerVar} | Rest], CanonicalVars, AllAliases) ->
+    %% Check if alias collides with a canonical variable
+    case lists:keyfind(Alias, 1, CanonicalVars) of
+        {Alias, CollidingMapping} ->
+            CollidingVar = cuttlefish_mapping:variable(CollidingMapping),
+            {error, {alias_collision, {Alias, OwnerVar, CollidingVar}}};
+        false ->
+            %% Check if alias collides with another mapping's alias
+            OtherAliases = [{A, V} || {A, V} <- AllAliases, V =/= OwnerVar],
+            case lists:keyfind(Alias, 1, OtherAliases) of
+                {Alias, OtherOwnerVar} ->
+                    {error, {alias_collision, {Alias, OwnerVar, OtherOwnerVar}}};
+                false ->
+                    validate_alias_collisions(Rest, CanonicalVars, AllAliases)
+            end
+    end.
 
 count_mappings(Mappings) ->
     lists:foldl(
@@ -510,5 +552,36 @@ merge_across_multiple_schemas_test() ->
     ?assertEqual(on, cuttlefish_mapping:default(Mapping)),
     ?assertEqual(["hi"], cuttlefish_mapping:doc(Mapping)),
     ok.
+
+%% Alias collision tests
+
+alias_collision_with_canonical_test() ->
+    %% Alias collides with another mapping's canonical variable
+    String = "{mapping, \"a.b\", \"e.k\", [{aliases, [\"c.d\"]}]}.\n"
+          ++ "{mapping, \"c.d\", \"e.j\", []}.\n",
+    Result = strings([String]),
+    ?assertMatch({errorlist, [{error, {alias_collision, _}}]}, Result).
+
+alias_collision_between_aliases_test() ->
+    %% Same alias claimed by two different mappings
+    String = "{mapping, \"a.b\", \"e.k\", [{aliases, [\"old.key\"]}]}.\n"
+          ++ "{mapping, \"c.d\", \"e.j\", [{aliases, [\"old.key\"]}]}.\n",
+    Result = strings([String]),
+    ?assertMatch({errorlist, [{error, {alias_collision, _}}]}, Result).
+
+alias_no_collision_test() ->
+    %% Different aliases, no collision
+    String = "{mapping, \"a.b\", \"e.k\", [{aliases, [\"old.ab\"]}]}.\n"
+          ++ "{mapping, \"c.d\", \"e.j\", [{aliases, [\"old.cd\"]}]}.\n",
+    {_, Mappings, _} = strings([String]),
+    ?assertEqual(2, length(Mappings)).
+
+alias_no_collision_same_mapping_test() ->
+    %% Multiple aliases on same mapping is fine
+    String = "{mapping, \"a.b\", \"e.k\", [{aliases, [\"old.ab\", \"older.ab\"]}]}.\n",
+    {_, Mappings, _} = strings([String]),
+    ?assertEqual(1, length(Mappings)),
+    [M] = Mappings,
+    ?assertEqual([["old", "ab"], ["older", "ab"]], cuttlefish_mapping:aliases(M)).
 
 -endif.
