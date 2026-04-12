@@ -78,7 +78,7 @@ restrict_mappings(M, {Mappings, Keys}, ConfigKeys) ->
 map_add_defaults({_, Mappings, _} = Schema, Config, ParsedArgs) ->
     %% Config at this point is just what's in the .conf file.
     %% First resolve any aliases to their canonical keys
-    _ = ?LOG_DEBUG("Resolving Aliases"),
+    _ = ?LOG_DEBUG("Resolving aliases"),
     AliasResolvedConfig = resolve_aliases(Config, Mappings),
     %% add_defaults/2 rolls the default values in from the schema
     _ = ?LOG_DEBUG("Adding Defaults"),
