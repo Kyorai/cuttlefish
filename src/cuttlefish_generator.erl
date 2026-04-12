@@ -380,7 +380,7 @@ add_default(Conf, Prefixes, MappingRecord, Acc) ->
 
         %% If Match =:= true, do nothing, the value is set in the .conf file
         _ ->
-            %% TODO: Handle with more style and grace
+            %% Both fuzzy and strict match should not happen
             _ = ?LOG_ERROR("Both fuzzy and strict match! should not happen"),
             [{error, {map_multiple_match, VariableDef}}|Acc]
     end.
