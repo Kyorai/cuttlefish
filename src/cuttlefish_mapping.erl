@@ -210,7 +210,7 @@ first_fuzzy_alias([Alias|Rest]) ->
 %% in which case, there's only ever one instance of a key in the list
 %% so keyreplace works fine.
 -spec parse_and_merge(
-    raw_mapping(), [mapping()]) -> [mapping()].
+    raw_mapping(), [mapping()]) -> [mapping()] | cuttlefish_error:error().
 parse_and_merge({mapping, Variable, _Mapping, Props} = MappingSource, Mappings) ->
     Var = cuttlefish_variable:tokenize(Variable),
     case lists:keyfind(Var, #mapping.variable, Mappings) of
@@ -223,27 +223,34 @@ parse_and_merge({mapping, Variable, _Mapping, Props} = MappingSource, Mappings) 
                 _ ->
                     parse(MappingSource)
             end,
-            lists:keyreplace(Var, #mapping.variable, Mappings, MaybeMergedMapping)
+            case MaybeMergedMapping of
+                {error, _} = Error -> Error;
+                _ -> lists:keyreplace(Var, #mapping.variable, Mappings, MaybeMergedMapping)
+            end
     end.
 
--spec merge(raw_mapping(), mapping()) -> mapping().
+-spec merge(raw_mapping(), mapping()) -> mapping() | cuttlefish_error:error().
 merge(NewMappingSource, OldMapping) ->
-    MergeMapping = parse(NewMappingSource),
-    #mapping{
-        variable = variable(MergeMapping),
-        mapping = mapping(MergeMapping),
-        default = choose(default, NewMappingSource, MergeMapping, OldMapping),
-        commented = choose(commented, NewMappingSource, MergeMapping, OldMapping),
-        datatype = choose(datatype, NewMappingSource, MergeMapping, OldMapping),
-        level = choose(level, NewMappingSource, MergeMapping, OldMapping),
-        doc = choose(doc, NewMappingSource, MergeMapping, OldMapping),
-        include_default = choose(include_default, NewMappingSource, MergeMapping, OldMapping),
-        new_conf_value = choose(new_conf_value, NewMappingSource, MergeMapping, OldMapping),
-        validators = choose(validators, NewMappingSource, MergeMapping, OldMapping),
-        see = choose(see, NewMappingSource, MergeMapping, OldMapping),
-        hidden = choose(hidden, NewMappingSource, MergeMapping, OldMapping),
-        aliases = choose(aliases, NewMappingSource, MergeMapping, OldMapping)
-    }.
+    case parse(NewMappingSource) of
+        {error, _} = Error ->
+            Error;
+        MergeMapping ->
+            #mapping{
+                variable = variable(MergeMapping),
+                mapping = mapping(MergeMapping),
+                default = choose(default, NewMappingSource, MergeMapping, OldMapping),
+                commented = choose(commented, NewMappingSource, MergeMapping, OldMapping),
+                datatype = choose(datatype, NewMappingSource, MergeMapping, OldMapping),
+                level = choose(level, NewMappingSource, MergeMapping, OldMapping),
+                doc = choose(doc, NewMappingSource, MergeMapping, OldMapping),
+                include_default = choose(include_default, NewMappingSource, MergeMapping, OldMapping),
+                new_conf_value = choose(new_conf_value, NewMappingSource, MergeMapping, OldMapping),
+                validators = choose(validators, NewMappingSource, MergeMapping, OldMapping),
+                see = choose(see, NewMappingSource, MergeMapping, OldMapping),
+                hidden = choose(hidden, NewMappingSource, MergeMapping, OldMapping),
+                aliases = choose(aliases, NewMappingSource, MergeMapping, OldMapping)
+            }
+    end.
 
 choose(Field, {_, _, _, PreParseMergeProps}, MergeMapping, OldMapping) ->
     IsDefined = proplists:is_defined(Field, PreParseMergeProps) orelse
