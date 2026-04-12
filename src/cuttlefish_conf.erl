@@ -561,4 +561,14 @@ assert_no_output(Setting) ->
 
     ?assertEqual([], generate_element(Mapping)).
 
+generate_does_not_emit_aliases_test() ->
+    Mapping = cuttlefish_mapping:parse({mapping, "new.key", "app.setting", [
+        {default, "val"},
+        {aliases, ["old.key"]}
+    ]}),
+    Generated = generate([Mapping]),
+    FlatLines = [lists:flatten(L) || L <- Generated],
+    ?assert(lists:any(fun(L) -> string:find(L, "new.key") =/= nomatch end, FlatLines)),
+    ?assertNot(lists:any(fun(L) -> string:find(L, "old.key") =/= nomatch end, FlatLines)).
+
 -endif.

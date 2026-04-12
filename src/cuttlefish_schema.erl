@@ -108,7 +108,47 @@ filter({Translations, Mappings, Validators}) ->
         end,
         Mappings, MappingsToCheck),
 
-    {Translations, NewMappings, Validators}.
+    case validate_aliases(NewMappings) of
+        ok ->
+            {Translations, NewMappings, Validators};
+        {errorlist, _} = Errors ->
+            Errors
+    end.
+
+%% @doc Validates that aliases don't collide with other mappings' canonical
+%% variables or with aliases from other mappings.
+-spec validate_aliases([cuttlefish_mapping:mapping()]) ->
+    ok | cuttlefish_error:errorlist().
+validate_aliases(Mappings) ->
+    CanonicalVarSet = sets:from_list(
+        [cuttlefish_mapping:variable(M) || M <- Mappings]),
+    AliasIndex = lists:flatmap(fun(M) ->
+        Variable = cuttlefish_mapping:variable(M),
+        [{Alias, Variable} || Alias <- cuttlefish_mapping:aliases(M)]
+    end, Mappings),
+    collect_alias_collision_errors(AliasIndex, CanonicalVarSet, []).
+
+collect_alias_collision_errors([], _CanonicalVarSet, []) ->
+    ok;
+collect_alias_collision_errors([], _CanonicalVarSet, Errors) ->
+    {errorlist, lists:reverse(Errors)};
+collect_alias_collision_errors([{Alias, OwnerVar} | Rest], CanonicalVarSet, Errors) ->
+    AliasStr = cuttlefish_variable:format(Alias),
+    OwnerStr = cuttlefish_variable:format(OwnerVar),
+    NewErrors = case sets:is_element(Alias, CanonicalVarSet) of
+        true ->
+            [{error, {alias_shadows_canonical, {AliasStr, OwnerStr}}} | Errors];
+        false ->
+            OtherMappingAliases = [{A, V} || {A, V} <- Rest, V =/= OwnerVar],
+            case lists:keyfind(Alias, 1, OtherMappingAliases) of
+                {Alias, OtherOwnerVar} ->
+                    OtherStr = cuttlefish_variable:format(OtherOwnerVar),
+                    [{error, {alias_claimed_by_multiple_mappings, {AliasStr, OwnerStr, OtherStr}}} | Errors];
+                false ->
+                    Errors
+            end
+    end,
+    collect_alias_collision_errors(Rest, CanonicalVarSet, NewErrors).
 
 count_mappings(Mappings) ->
     lists:foldl(
@@ -510,5 +550,59 @@ merge_across_multiple_schemas_test() ->
     ?assertEqual(on, cuttlefish_mapping:default(Mapping)),
     ?assertEqual(["hi"], cuttlefish_mapping:doc(Mapping)),
     ok.
+
+%% Alias collision tests
+
+alias_shadows_canonical_test() ->
+    String = "{mapping, \"a.b\", \"e.k\", [{aliases, [\"c.d\"]}]}.\n"
+          ++ "{mapping, \"c.d\", \"e.j\", []}.\n",
+    Result = strings([String]),
+    ?assertMatch({errorlist, [{error, {alias_shadows_canonical, {"c.d", "a.b"}}}]}, Result).
+
+alias_claimed_by_multiple_mappings_test() ->
+    String = "{mapping, \"a.b\", \"e.k\", [{aliases, [\"old.key\"]}]}.\n"
+          ++ "{mapping, \"c.d\", \"e.j\", [{aliases, [\"old.key\"]}]}.\n",
+    Result = strings([String]),
+    ?assertMatch({errorlist,
+        [{error, {alias_claimed_by_multiple_mappings, {"old.key", "a.b", "c.d"}}}]}, Result).
+
+alias_multiple_collisions_reported_test() ->
+    %% Two independent shadow collisions: both should be reported
+    String = "{mapping, \"a.b\", \"e.k\", [{aliases, [\"old.x\"]}]}.\n"
+          ++ "{mapping, \"c.d\", \"e.j\", [{aliases, [\"old.y\"]}]}.\n"
+          ++ "{mapping, \"old.x\", \"e.m\", []}.\n"
+          ++ "{mapping, \"old.y\", \"e.n\", []}.\n",
+    {errorlist, Errors} = strings([String]),
+    ?assertEqual(2, length(Errors)),
+    ?assert(lists:any(fun({error, {alias_shadows_canonical, {"old.x", _}}}) -> true;
+                         (_) -> false end, Errors)),
+    ?assert(lists:any(fun({error, {alias_shadows_canonical, {"old.y", _}}}) -> true;
+                         (_) -> false end, Errors)).
+
+alias_no_collision_test() ->
+    %% Different aliases, no collision
+    String = "{mapping, \"a.b\", \"e.k\", [{aliases, [\"old.ab\"]}]}.\n"
+          ++ "{mapping, \"c.d\", \"e.j\", [{aliases, [\"old.cd\"]}]}.\n",
+    {_, Mappings, _} = strings([String]),
+    ?assertEqual(2, length(Mappings)).
+
+alias_no_collision_same_mapping_test() ->
+    %% Multiple aliases on same mapping is fine
+    String = "{mapping, \"a.b\", \"e.k\", [{aliases, [\"old.ab\", \"older.ab\"]}]}.\n",
+    {_, Mappings, _} = strings([String]),
+    ?assertEqual(1, length(Mappings)),
+    [M] = Mappings,
+    ?assertEqual([["old", "ab"], ["older", "ab"]], cuttlefish_mapping:aliases(M)).
+
+alias_singular_from_schema_string_test() ->
+    String = "{mapping, \"new.key\", \"app.setting\", [{alias, \"old.key\"}]}.\n",
+    {_, [M], _} = strings([String]),
+    ?assertEqual([["old", "key"]], cuttlefish_mapping:aliases(M)).
+
+alias_shadows_canonical_across_schema_strings_test() ->
+    Schema1 = "{mapping, \"a.b\", \"e.k\", [{aliases, [\"old.key\"]}]}.\n",
+    Schema2 = "{mapping, \"old.key\", \"e.j\", []}.\n",
+    Result = strings([Schema1, Schema2]),
+    ?assertMatch({errorlist, [{error, {alias_shadows_canonical, {"old.key", "a.b"}}}]}, Result).
 
 -endif.

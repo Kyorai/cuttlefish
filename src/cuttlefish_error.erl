@@ -129,6 +129,9 @@ xlate({circular_rhs, History}) ->
 xlate({substitution_missing_config, {Substitution, Variable}}) ->
     io_lib:format("'~ts' substitution requires a config variable '~ts' to be set",
                   [Substitution, Variable]);
+xlate({substitution_alias_key, {Substitution, Alias, Canonical}}) ->
+    io_lib:format("'~ts' substitution references '~ts', which is a deprecated alias for '~ts'",
+                  [Substitution, Alias, Canonical]);
 xlate({mapping_not_found, Variable}) ->
     [Variable, " not_found"];
 xlate({mapping_multiple, {Variable, {Hard, Fuzzy}}}) ->
@@ -147,7 +150,30 @@ xlate({erl_parse_unexpected, Error}) ->
 xlate({parse_schema, Value}) ->
     io_lib:format("Unknown parse return: ~tp", [Value]);
 xlate({erl_scan, LineNo}) ->
-    ["Error scanning erlang near line ", integer_to_list(LineNo)].
+    ["Error scanning erlang near line ", integer_to_list(LineNo)];
+xlate({aliases_empty, Variable}) ->
+    io_lib:format("No aliases declared for mapping ~ts (omit the aliases property instead)", [Variable]);
+xlate({aliases_is_bare_string, Variable}) ->
+    io_lib:format("Aliases value for mapping ~ts is a bare string; wrap it in a list, e.g. {aliases, [\"old.key\"]}", [Variable]);
+xlate({alias_not_a_string, Variable, Value}) ->
+    io_lib:format("Alias for mapping ~ts must be a string, got ~tp", [Variable, Value]);
+xlate({alias_and_aliases_both_set, Variable}) ->
+    io_lib:format("Mapping ~ts declares both {alias, ...} and {aliases, ...} (use one or the other)", [Variable]);
+xlate({alias_is_self, Variable}) ->
+    io_lib:format("Mapping ~ts lists itself among its aliases", [Variable]);
+xlate({aliases_contain_duplicates, Variable}) ->
+    io_lib:format("Mapping ~ts has duplicate entries in its aliases list", [Variable]);
+xlate({aliases_invalid_value, Variable, Value}) ->
+    io_lib:format("Aliases for mapping ~ts must be a list of strings, got ~tp", [Variable, Value]);
+xlate({fuzzy_alias_unsupported, Variable, Alias}) ->
+    io_lib:format("Fuzzy alias ~ts on mapping ~ts is not supported",
+                  [Alias, Variable]);
+xlate({alias_shadows_canonical, {Alias, OwnerMapping}}) ->
+    io_lib:format("Alias ~ts on mapping ~ts shadows the canonical variable ~ts",
+                  [Alias, OwnerMapping, Alias]);
+xlate({alias_claimed_by_multiple_mappings, {Alias, Mapping1, Mapping2}}) ->
+    io_lib:format("Alias ~ts is claimed by both ~ts and ~ts",
+                  [Alias, Mapping1, Mapping2]).
 
 -spec contains_error(list()) -> boolean().
 contains_error(List) ->
@@ -217,5 +243,31 @@ errorlist_maybe_test() ->
        ["hi", "what even is an error?", "bye"],
        errorlist_maybe(["hi", "what even is an error?", "bye"])),
     ok.
+
+%% Alias error xlate tests
+
+alias_error_xlate_test() ->
+    ?assertEqual("No aliases declared for mapping a.b (omit the aliases property instead)",
+                 lists:flatten(xlate({aliases_empty, "a.b"}))),
+    ?assertEqual("Aliases value for mapping a.b is a bare string; "
+                 "wrap it in a list, e.g. {aliases, [\"old.key\"]}",
+                 lists:flatten(xlate({aliases_is_bare_string, "a.b"}))),
+    ?assertEqual("Mapping a.b lists itself among its aliases",
+                 lists:flatten(xlate({alias_is_self, "a.b"}))),
+    ?assertEqual("Fuzzy alias old.$name.key on mapping a.b is not supported",
+                 lists:flatten(xlate({fuzzy_alias_unsupported, "a.b", "old.$name.key"}))),
+    ?assertEqual("Alias for mapping a.b must be a string, got 42",
+                 lists:flatten(xlate({alias_not_a_string, "a.b", 42}))),
+    ?assertEqual("Mapping a.b has duplicate entries in its aliases list",
+                 lists:flatten(xlate({aliases_contain_duplicates, "a.b"}))),
+    ?assertEqual("Aliases for mapping a.b must be a list of strings, got 42",
+                 lists:flatten(xlate({aliases_invalid_value, "a.b", 42}))),
+    ?assertEqual("Mapping a.b declares both {alias, ...} and {aliases, ...} "
+                 "(use one or the other)",
+                 lists:flatten(xlate({alias_and_aliases_both_set, "a.b"}))),
+    ?assertEqual("Alias c.d on mapping a.b shadows the canonical variable c.d",
+                 lists:flatten(xlate({alias_shadows_canonical, {"c.d", "a.b"}}))),
+    ?assertEqual("Alias old.key is claimed by both a.b and c.d",
+                 lists:flatten(xlate({alias_claimed_by_multiple_mappings, {"old.key", "a.b", "c.d"}}))).
 
 -endif.
