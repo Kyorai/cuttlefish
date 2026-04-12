@@ -319,17 +319,11 @@ generate_conf_default_test() ->
     TestSchema = lists:map(fun cuttlefish_mapping:parse/1, TestMappings),
     GeneratedConf = generate(TestSchema),
 
-    %% TODO Feels pretty fragile to rely on the number of comment lines not changing...
-    %% Would be nice if we had a good way to pinpoint the line we want to check without
-    %% having to hardcode the line numbers into the lists:nth calls.
-    ?assertEqual(
-       "default.absent = 42",
-       lists:nth(4, GeneratedConf)
-      ),
-    ?assertEqual(
-       "default.present = 9001",
-       lists:nth(11, GeneratedConf)
-      ),
+    FindLine = fun(Key) ->
+        hd([L || L <- GeneratedConf, string:prefix(L, Key) =/= nomatch])
+    end,
+    ?assertEqual("default.absent = 42",  FindLine("default.absent")),
+    ?assertEqual("default.present = 9001", FindLine("default.present")),
     ok.
 
 generate_dollar_test() ->
