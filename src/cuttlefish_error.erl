@@ -129,6 +129,9 @@ xlate({circular_rhs, History}) ->
 xlate({substitution_missing_config, {Substitution, Variable}}) ->
     io_lib:format("'~ts' substitution requires a config variable '~ts' to be set",
                   [Substitution, Variable]);
+xlate({substitution_alias_key, {Substitution, Alias, Canonical}}) ->
+    io_lib:format("'~ts' substitution references '~ts', which is a deprecated alias for '~ts'",
+                  [Substitution, Alias, Canonical]);
 xlate({mapping_not_found, Variable}) ->
     [Variable, " not_found"];
 xlate({mapping_multiple, {Variable, {Hard, Fuzzy}}}) ->

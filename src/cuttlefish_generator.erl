@@ -95,11 +95,12 @@ map_add_defaults({_, Mappings, _} = Schema, Config, ParsedArgs) ->
                            {error, atom(), cuttlefish_error:errorlist()}.
 map_value_sub(Schema, Config, ParsedArgs) ->
     _ = ?LOG_DEBUG("Right Hand Side Substitutions"),
+    {_, Mappings, _} = Schema,
      case value_sub(Config) of
          {SubbedConfig, []} ->
             map_transform_datatypes(Schema, SubbedConfig, ParsedArgs);
          {_, EList} ->
-            {error, rhs_subs, {errorlist, EList}}
+            {error, rhs_subs, {errorlist, enrich_alias_sub_errors(EList, Mappings)}}
     end.
 
 -spec map_transform_datatypes(cuttlefish_schema:schema(), cuttlefish_conf:conf(), [proplists:property()]) ->
@@ -270,6 +271,28 @@ set_value([HeadToken|MoreTokens], PList, NewValue) ->
         Token,
         set_value(MoreTokens, OldValue, NewValue),
         PList).
+
+%% @doc Rewrites substitution_missing_config errors where the missing variable
+%% is a known alias key, to produce a more helpful error message.
+-spec enrich_alias_sub_errors([cuttlefish_error:error()], [cuttlefish_mapping:mapping()]) ->
+    [cuttlefish_error:error()].
+enrich_alias_sub_errors(EList, Mappings) ->
+    AliasIndex = lists:flatmap(fun(M) ->
+        Canonical = cuttlefish_mapping:variable(M),
+        [{Alias, Canonical} || Alias <- cuttlefish_mapping:aliases(M)]
+    end, Mappings),
+    [case E of
+        {error, {substitution_missing_config, {Src, Var}}} ->
+            VarTokenized = cuttlefish_variable:tokenize(Var),
+            case lists:keyfind(VarTokenized, 1, AliasIndex) of
+                {_, Canonical} ->
+                    {error, {substitution_alias_key,
+                             {Src, Var, cuttlefish_variable:format(Canonical)}}};
+                false ->
+                    E
+            end;
+        _ -> E
+    end || E <- EList].
 
 %% @doc Resolves alias keys to their canonical keys.
 %% Alias values are rewritten to the canonical key with a deprecation warning.
@@ -1531,5 +1554,21 @@ rhs_substitution_of_alias_key_fails_test() ->
     Conf = [{["old", "key"], "hello"}, {["other"], "$(old.key)/world"}],
     Result = map(Schema, Conf),
     ?assertMatch({error, rhs_subs, _}, Result).
+
+rhs_substitution_of_alias_key_error_message_test() ->
+    Schema = cuttlefish_schema:strings([
+        "{mapping, \"new.key\", \"app.a\", [\n"
+        "  {datatype, string},\n"
+        "  {aliases, [\"old.key\"]}\n"
+        "]}.\n"
+        "{mapping, \"other\", \"app.b\", [\n"
+        "  {datatype, string}\n"
+        "]}.\n"
+    ]),
+    Conf = [{["old", "key"], "hello"}, {["other"], "$(old.key)/world"}],
+    {error, rhs_subs, {errorlist, [{error, {substitution_alias_key, {_, MissingVar, Canonical}}}]}} =
+        map(Schema, Conf),
+    ?assertMatch({match, _}, re:run(cuttlefish_error:xlate({substitution_alias_key, {"other", MissingVar, Canonical}}),
+                                    "alias")).
 
 -endif.
