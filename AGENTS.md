@@ -349,3 +349,25 @@ warnings.
 on both `ubuntu-latest` and `windows-latest`. Dialyzer runs only on the
 latest OTP release (28) on Ubuntu. The project targets these OTP versions
 per `README.md`.
+
+## Comments
+
+ * Only add comments that explain non-obvious intent
+ * Place comments above the line they refer to, not at the end of the line
+ * Use proper English grammar with articles, punctuation, and full stops at the end of sentences except for Markdown list items
+
+## Git Instructions
+
+ * Never add yourself to the list of commit co-authors
+ * Never mention yourself in commit messages in any way
+ * Do not commit changes automatically without explicit permission
+
+The main development branch is `main`. The upstream default branch is still
+set to `develop` for historical reasons, but `develop` is stale (v2.x).
+
+RabbitMQ pulls cuttlefish from [Hex](https://hex.pm/packages/cuttlefish).
+The library is maintained by the RabbitMQ core team.
+
+## Writing Style Guide
+
+ * Never add full stops to Markdown list items
