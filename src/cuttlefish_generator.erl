@@ -188,7 +188,7 @@ apply_mappings({Translations, Mappings, _Validators}, Conf) ->
 %% to the mapping producing no output, like cuttlefish:unset()).
 -spec collect_fuzzy_values(
         cuttlefish_variable:variable(), string(),
-        cuttlefish_mapping:collect_type(),
+        cuttlefish_mapping:collection_type(),
         cuttlefish_conf:conf(),
         [proplists:property()], ordsets:ordset(string()), ordsets:ordset(string())) ->
     {[proplists:property()], {ordsets:ordset(string()), ordsets:ordset(string())}}.
@@ -212,7 +212,7 @@ collect_fuzzy_values(Variable, Mapping, CollectType, Conf, ConfAcc, MaybeDrop, K
 -spec build_collect(
         cuttlefish_variable:variable(),
         [{string(), string()}],
-        cuttlefish_mapping:collect_type(),
+        cuttlefish_mapping:collection_type(),
         cuttlefish_conf:conf()) -> term().
 build_collect(Variable, Matches, list, Conf) ->
     Entries = [{SegVal,

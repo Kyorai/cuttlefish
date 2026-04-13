@@ -25,7 +25,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--type collect_type() :: list
+-type collection_type() :: list
                       | {map, atom}
                       | {map, binary}
                       | {proplist, atom}.
@@ -45,12 +45,12 @@
         see = [] :: [cuttlefish_variable:variable()],
         hidden = false :: boolean(),
         aliases = [] :: [{cuttlefish_variable:variable(), string() | undefined}],
-        collect = undefined :: collect_type() | undefined
+        collect = undefined :: collection_type() | undefined
     }).
 
 -type mapping() :: #mapping{}.
 -type raw_mapping() :: {mapping, string(), string(), [proplists:property()]}.
--export_type([mapping/0, collect_type/0]).
+-export_type([mapping/0, collection_type/0]).
 
 -export([
     parse/1,
@@ -350,7 +350,7 @@ aliases(M) -> [Var || {Var, _Msg} <- M#mapping.aliases].
     [{cuttlefish_variable:variable(), string() | undefined}].
 aliases_with_messages(M) -> M#mapping.aliases.
 
--spec collect(mapping()) -> collect_type() | undefined.
+-spec collect(mapping()) -> collection_type() | undefined.
 collect(M) -> M#mapping.collect.
 
 -spec validators(mapping(), [cuttlefish_validator:validator()]) -> [cuttlefish_validator:validator()].
@@ -381,7 +381,7 @@ remove_all_but_first(MappingName, Mappings) ->
                 [M|Acc]
         end, [], Mappings).
 
--spec parse_collect(term()) -> collect_type() | undefined | cuttlefish_error:error().
+-spec parse_collect(term()) -> collection_type() | undefined | cuttlefish_error:error().
 parse_collect(undefined)      -> undefined;
 parse_collect(list)           -> list;
 parse_collect({map, atom})    -> {map, atom};
