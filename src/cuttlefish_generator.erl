@@ -275,11 +275,12 @@ set_value([HeadToken|MoreTokens], PList, NewValue) ->
 %% Alias values are rewritten to the canonical key with a deprecation warning.
 %% Canonical takes precedence. If multiple aliases are set, the first one
 %% listed in the mapping's `aliases' property wins. Every set alias warns.
+%% If the alias carries a custom message, it is appended to the warning.
 -spec resolve_aliases(cuttlefish_conf:conf(), [cuttlefish_mapping:mapping()]) ->
     cuttlefish_conf:conf().
 resolve_aliases(Conf, Mappings) ->
     lists:foldl(fun(Mapping, ConfAcc) ->
-        case cuttlefish_mapping:aliases(Mapping) of
+        case cuttlefish_mapping:aliases_with_messages(Mapping) of
             [] -> ConfAcc;
             Aliases -> resolve_aliases_for_single_mapping(Mapping, Aliases, ConfAcc)
         end
@@ -288,7 +289,7 @@ resolve_aliases(Conf, Mappings) ->
 resolve_aliases_for_single_mapping(Mapping, Aliases, Conf) ->
     Canonical = cuttlefish_mapping:variable(Mapping),
     CanonicalStr = cuttlefish_variable:format(Canonical),
-    lists:foldl(fun(AliasVar, ConfAcc) ->
+    lists:foldl(fun({AliasVar, CustomMsg}, ConfAcc) ->
         %% Recheck on every iteration: a previous alias in this
         %% fold may have inserted the canonical key.
         CanonicalSet = lists:keymember(Canonical, 1, ConfAcc),
@@ -297,16 +298,29 @@ resolve_aliases_for_single_mapping(Mapping, Aliases, Conf) ->
                 ConfAcc;
             {_, _} when CanonicalSet ->
                 AliasStr = cuttlefish_variable:format(AliasVar),
-                _ = ?LOG_WARNING("~ts is deprecated and ignored "
-                             "in favor of ~ts", [AliasStr, CanonicalStr]),
+                _ = ?LOG_WARNING("~ts", [format_alias_warning(
+                    ignored, AliasStr, CanonicalStr, CustomMsg)]),
                 lists:keydelete(AliasVar, 1, ConfAcc);
             {_, Value} ->
                 AliasStr = cuttlefish_variable:format(AliasVar),
-                _ = ?LOG_WARNING("~ts is deprecated, use ~ts instead",
-                             [AliasStr, CanonicalStr]),
+                _ = ?LOG_WARNING("~ts", [format_alias_warning(
+                    use_canonical, AliasStr, CanonicalStr, CustomMsg)]),
                 [{Canonical, Value} | lists:keydelete(AliasVar, 1, ConfAcc)]
         end
     end, Conf, Aliases).
+
+format_alias_warning(Type, AliasStr, CanonicalStr, CustomMsg) ->
+    Base = case Type of
+        use_canonical ->
+            io_lib:format("~ts was renamed to ~ts", [AliasStr, CanonicalStr]);
+        ignored ->
+            io_lib:format("~ts was renamed to ~ts, both are set, using ~ts",
+                          [AliasStr, CanonicalStr, CanonicalStr])
+    end,
+    case CustomMsg of
+        undefined -> Base;
+        _         -> [Base, io_lib:format(" (~ts)", [CustomMsg])]
+    end.
 
 %% @doc adds default values from the schema when something's not
 %% defined in the Conf, to give a complete app.config
@@ -1394,7 +1408,7 @@ resolve_alias_warns_on_deprecated_key_test() ->
     _ = resolve_aliases([{["old", "key"], "42"}], [Mapping]),
     [Log] = cuttlefish_test_logging:get_logs(),
     ?assertMatch({match, _},
-        re:run(Log, "old\\.key is deprecated, use new\\.key instead")).
+        re:run(Log, "old\\.key was renamed to new\\.key")).
 
 resolve_alias_warns_on_ignored_key_test() ->
     _ = cuttlefish_test_logging:set_up(),
@@ -1405,7 +1419,7 @@ resolve_alias_warns_on_ignored_key_test() ->
     _ = resolve_aliases([{["new", "key"], "1"}, {["old", "key"], "2"}], [Mapping]),
     [Log] = cuttlefish_test_logging:get_logs(),
     ?assertMatch({match, _},
-        re:run(Log, "old\\.key is deprecated and ignored in favor of new\\.key")).
+        re:run(Log, "old\\.key was renamed to new\\.key, both are set, using new\\.key")).
 
 resolve_alias_multiple_all_warn_test() ->
     _ = cuttlefish_test_logging:set_up(),
@@ -1496,12 +1510,12 @@ minimal_map_excludes_mapping_without_alias_or_canonical_test() ->
         "  {aliases, [\"old.key\"]}\n"
         "]}.\n"
     ]),
-    %% Neither canonical nor alias in config — mapping should be excluded
+    %% Neither canonical nor alias in config: mapping should be excluded
     Result = minimal_map(Schema, []),
     ?assertEqual([], Result).
 
 %% RHS substitutions reference the canonical key, not the alias.
-%% $(old.key) won't resolve after alias rewriting — use $(new.key).
+%% $(old.key) won't resolve after alias rewriting: use $(new.key).
 rhs_substitution_uses_canonical_not_alias_test() ->
     Schema = cuttlefish_schema:strings([
         "{mapping, \"new.key\", \"app.a\", [\n"
@@ -1531,5 +1545,89 @@ rhs_substitution_of_alias_key_fails_test() ->
     Conf = [{["old", "key"], "hello"}, {["other"], "$(old.key)/world"}],
     Result = map(Schema, Conf),
     ?assertMatch({error, rhs_subs, _}, Result).
+
+%% Alias message tests
+
+resolve_alias_custom_msg_test() ->
+    _ = cuttlefish_test_logging:set_up(),
+    _ = cuttlefish_test_logging:bounce(warning),
+    Mapping = cuttlefish_mapping:parse({mapping, "new.key", "app.setting", [
+        {datatype, integer},
+        {aliases, [{"old.key", "renamed in 4.0"}]}
+    ]}),
+    Resolved = resolve_aliases([{["old", "key"], "42"}], [Mapping]),
+    ?assertEqual([{["new", "key"], "42"}], Resolved),
+    [Log] = cuttlefish_test_logging:get_logs(),
+    ?assertMatch({match, _}, re:run(Log, "old\\.key was renamed to new\\.key")),
+    ?assertMatch({match, _}, re:run(Log, "\\(renamed in 4\\.0\\)")).
+
+resolve_alias_custom_msg_both_set_test() ->
+    _ = cuttlefish_test_logging:set_up(),
+    _ = cuttlefish_test_logging:bounce(warning),
+    Mapping = cuttlefish_mapping:parse({mapping, "new.key", "app.setting", [
+        {datatype, integer},
+        {aliases, [{"old.key", "removed in 4.0"}]}
+    ]}),
+    _ = resolve_aliases([{["new", "key"], "100"}, {["old", "key"], "42"}], [Mapping]),
+    [Log] = cuttlefish_test_logging:get_logs(),
+    ?assertMatch({match, _},
+        re:run(Log, "both are set, using new\\.key")),
+    ?assertMatch({match, _}, re:run(Log, "\\(removed in 4\\.0\\)")).
+
+resolve_alias_default_msg_test() ->
+    _ = cuttlefish_test_logging:set_up(),
+    _ = cuttlefish_test_logging:bounce(warning),
+    Mapping = cuttlefish_mapping:parse({mapping, "new.key", "app.setting", [
+        {datatype, integer}, {aliases, ["old.key"]}
+    ]}),
+    _ = resolve_aliases([{["old", "key"], "42"}], [Mapping]),
+    [Log] = cuttlefish_test_logging:get_logs(),
+    ?assertMatch({match, _}, re:run(Log, "old\\.key was renamed to new\\.key")),
+    ?assertEqual(nomatch, re:run(Log, "\\(")).
+
+resolve_alias_mixed_messages_test() ->
+    _ = cuttlefish_test_logging:set_up(),
+    _ = cuttlefish_test_logging:bounce(warning),
+    Mapping = cuttlefish_mapping:parse({mapping, "new.key", "app.setting", [
+        {datatype, integer},
+        {aliases, [{"old.key", "renamed in 4.0"}, "oldest.key"]}
+    ]}),
+    _ = resolve_aliases([{["old", "key"], "1"}, {["oldest", "key"], "2"}], [Mapping]),
+    Logs = cuttlefish_test_logging:get_logs(),
+    ?assertEqual(2, length(Logs)),
+    ?assertMatch({match, _}, re:run(hd(Logs), "\\(renamed in 4\\.0\\)")),
+    ?assertEqual(nomatch, re:run(lists:last(Logs), "\\(")).
+
+resolve_alias_singular_with_msg_test() ->
+    Mapping = cuttlefish_mapping:parse({mapping, "new.key", "app.setting", [
+        {datatype, integer}, {alias, {"old.key", "consolidated in 4.0"}}
+    ]}),
+    Resolved = resolve_aliases([{["old", "key"], "42"}], [Mapping]),
+    ?assertEqual([{["new", "key"], "42"}], Resolved),
+    ?assertEqual([["old", "key"]], cuttlefish_mapping:aliases(Mapping)),
+    ?assertEqual([{["old", "key"], "consolidated in 4.0"}],
+                 cuttlefish_mapping:aliases_with_messages(Mapping)).
+
+alias_msg_end_to_end_plural_test() ->
+    Schema = cuttlefish_schema:strings([
+        "{mapping, \"new.key\", \"app.setting\", [\n"
+        "  {datatype, integer},\n"
+        "  {default, 10},\n"
+        "  {aliases, [{\"old.key\", \"renamed in 4.0\"}]}\n"
+        "]}.\n"
+    ]),
+    Result = map(Schema, [{["old", "key"], "42"}]),
+    ?assertEqual(42, proplists:get_value(setting, proplists:get_value(app, Result))).
+
+alias_msg_end_to_end_singular_test() ->
+    Schema = cuttlefish_schema:strings([
+        "{mapping, \"new.key\", \"app.setting\", [\n"
+        "  {datatype, integer},\n"
+        "  {default, 10},\n"
+        "  {alias, {\"old.key\", \"renamed in 4.0\"}}\n"
+        "]}.\n"
+    ]),
+    Result = map(Schema, [{["old", "key"], "42"}]),
+    ?assertEqual(42, proplists:get_value(setting, proplists:get_value(app, Result))).
 
 -endif.
