@@ -39,6 +39,5 @@ jobs:
           ERL_FLAGS: '+pc unicode'
         run: rebar3 eunit --verbose
       - name: Dialyzer
-        continue-on-error: true # TODO FUTURE
         if: ${{ matrix.otp_version == env.LATEST_OTP_RELEASE && startsWith(matrix.os, 'ubuntu') }}
         run: rebar3 dialyzer

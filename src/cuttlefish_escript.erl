@@ -66,9 +66,6 @@ parse_and_command(Args) ->
         {ok, {P, H}} -> {P, H, false};
         {error, {Reason, Data}} ->
             io:format(standard_error, "Error parsing arguments: ~p ~p~n~n", [Reason, Data]),
-            {[], [], true};
-        _ ->
-            io:format(standard_error, "Error parsing arguments~n~n", []),
             {[], [], true}
     end,
     {Command, ExtraArgs} = case {ParseError, lists:member(help, ParsedArgs), Extra} of

@@ -428,21 +428,8 @@ from_string_to_fqdn(String, {FQDNPlusColon, PortString}) ->
     FQDN = droplast(FQDNPlusColon),
     fqdn_conversions(String, FQDN, validate_fqdn(FQDN), port_to_integer(PortString)).
 
-from_string_to_tagged_string(String, {<<>>, String}) ->
-    %% does not follow the tag:value format (the tag is blank)
-    {error, {conversion, {String, "tagged string"}}};
-from_string_to_tagged_string(String, {String, <<>>}) ->
-    %% does not follow the tag:value format (the value is blank)
-    {error, {conversion, {String, "tagged string"}}};
 from_string_to_tagged_string(_String, {Tag, TaggedValue}) ->
     {binary_to_atom(Tag), binary_to_list(TaggedValue)}.
-
-from_string_to_tagged_binary(String, {<<>>, String}) ->
-    %% does not follow the tag:value format (the tag is blank)
-    {error, {conversion, {String, "tagged binary"}}};
-from_string_to_tagged_binary(String, {String, <<>>}) ->
-    %% does not follow the tag:value format (the value is blank)
-    {error, {conversion, {String, "tagged binary"}}};
 
 from_string_to_tagged_binary(_String, {Tag, TaggedValue}) ->
     {binary_to_atom(Tag), TaggedValue}.
