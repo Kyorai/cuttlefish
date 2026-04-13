@@ -121,7 +121,7 @@ parse(X) ->
     {error, {mapping_parse, X}}.
 
 -spec parse_aliases(string(), cuttlefish_variable:variable(), [proplists:property()], boolean()) ->
-    [cuttlefish_variable:variable()] | cuttlefish_error:error().
+    [{cuttlefish_variable:variable(), string() | undefined}] | cuttlefish_error:error().
 parse_aliases(Variable, VarTokenized, Proplist, IsMerge) ->
     RawAliases = case {proplists:get_value(alias, Proplist),
                        proplists:get_value(aliases, Proplist)} of
