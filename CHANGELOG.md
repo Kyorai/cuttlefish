@@ -1,5 +1,15 @@
 # Changelog
 
+## [v3.7.0](https://github.com/Kyorai/cuttlefish/tree/v3.7.0) (unreleased)
+
+[Full Changelog](https://github.com/Kyorai/cuttlefish/compare/v3.6.0...v3.7.0)
+
+**Merged pull requests:**
+
+- First class support for collections [\#73](https://github.com/Kyorai/cuttlefish/pull/73) ([michaelklishin](https://github.com/michaelklishin))
+- Alias support for deprecated conf keys [\#70](https://github.com/Kyorai/cuttlefish/pull/70) ([michaelklishin](https://github.com/michaelklishin))
+- Miscellaneous fixes: dialyzer, error propagation, test robustness [\#71](https://github.com/Kyorai/cuttlefish/pull/71) ([lukebakken](https://github.com/lukebakken))
+
 ## [v3.6.0](https://github.com/Kyorai/cuttlefish/tree/v3.6.0) (2025-10-29)
 
 [Full Changelog](https://github.com/Kyorai/cuttlefish/compare/v3.5.0...v3.6.0)
