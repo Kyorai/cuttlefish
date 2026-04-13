@@ -382,12 +382,14 @@ remove_all_but_first(MappingName, Mappings) ->
         end, [], Mappings).
 
 -spec parse_collect(term()) -> collection_type() | undefined | cuttlefish_error:error().
-parse_collect(undefined)      -> undefined;
-parse_collect(list)           -> list;
-parse_collect({map, atom})    -> {map, atom};
-parse_collect({map, binary})  -> {map, binary};
+parse_collect(undefined)        -> undefined;
+parse_collect(list)             -> list;
+parse_collect({map, atom})      -> {map, atom};
+parse_collect({map, binary})    -> {map, binary};
 parse_collect({proplist, atom}) -> {proplist, atom};
-parse_collect(Other)          -> {error, {invalid_collect_type, Other}}.
+%% If {proplist, binary} is given, reject it; use {map, binary} for binary keys.
+parse_collect({proplist, binary}) -> {error, {unsupported_collect_type, {proplist, binary}}};
+parse_collect(Other)            -> {error, {invalid_collect_type, Other}}.
 
 -ifdef(TEST).
 
@@ -856,6 +858,12 @@ collect_invalid_type_test() ->
         {collect, not_valid}
     ]}),
     ?assertMatch({error, {invalid_collect_type, not_valid}}, Result).
+
+collect_proplist_binary_unsupported_test() ->
+    Result = parse({mapping, "prefix.$name", "app.key", [
+        {collect, {proplist, binary}}
+    ]}),
+    ?assertMatch({error, {unsupported_collect_type, {proplist, binary}}}, Result).
 
 collect_on_non_fuzzy_test() ->
     Result = parse({mapping, "no.wildcard", "app.key", [

@@ -174,6 +174,9 @@ xlate({alias_shadows_canonical, {Alias, OwnerMapping}}) ->
 xlate({alias_claimed_by_multiple_mappings, {Alias, Mapping1, Mapping2}}) ->
     io_lib:format("Alias ~ts is claimed by both ~ts and ~ts",
                   [Alias, Mapping1, Mapping2]);
+xlate({unsupported_collect_type, {proplist, binary}}) ->
+    "collect type {proplist, binary} is not supported; "
+    "use {proplist, atom} for atom keys or {map, binary} for binary keys";
 xlate({invalid_collect_type, Value}) ->
     io_lib:format("Invalid collect type ~tp. Valid types: list, {map, atom}, "
                   "{map, binary}, {proplist, atom}", [Value]);
