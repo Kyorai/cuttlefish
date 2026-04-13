@@ -32,7 +32,7 @@
 -define(LSUBLEN, 2).
 -define(RSUBLEN, 1).
 
--export([map/2, map/3, find_mapping/2, add_defaults/2, minimal_map/2, resolve_aliases/2]).
+-export([map/2, map/3, find_mapping/2, add_defaults/2, minimal_map/2, resolve_aliases/2, validate/2, validate/3]).
 
 -spec map(cuttlefish_schema:schema(), cuttlefish_conf:conf()) ->
                  [proplists:property()] |
@@ -742,6 +742,52 @@ foldm_either(Fun, [H|T], Acc) ->
         {ok, Result} -> {ok, Result};
         {error, _}=Error ->
             foldm_either(Fun, T, [Error|Acc])
+    end.
+
+%% @doc Validates the configuration against the schema by running all pipeline
+%% phases and collecting errors from each, rather than stopping at the first
+%% failing phase. Does not write any files.
+-spec validate(cuttlefish_schema:schema(), cuttlefish_conf:conf()) ->
+    ok | {error, cuttlefish_error:errorlist()}.
+validate(Schema, Config) ->
+    validate(Schema, Config, []).
+
+-spec validate(cuttlefish_schema:schema(), cuttlefish_conf:conf(), [proplists:property()]) ->
+    ok | {error, cuttlefish_error:errorlist()}.
+validate({_, Mappings, _} = Schema, Config, ParsedArgs) ->
+    AliasResolvedConfig = resolve_aliases(Config, Mappings),
+    DConfig = add_defaults(AliasResolvedConfig, Mappings),
+    %% Separate errors injected by add_defaults from valid config entries so
+    %% subsequent phases can still run.
+    {DefaultErrors, CleanDConfig} = lists:partition(fun cuttlefish_error:is_error/1, DConfig),
+    {SubbedConfig, SubErrors0} = value_sub(CleanDConfig),
+    SubErrors = enrich_alias_sub_errors(SubErrors0, Mappings),
+    %% transform_datatypes already returns {GoodConf, Errors}; in map/3 the
+    %% error path discards GoodConf, but here we use both.
+    {TypedConf, TypeErrors} = transform_datatypes(SubbedConfig, Mappings, ParsedArgs),
+    ValidationErrors = case cuttlefish_error:errorlist_maybe(run_validations(Schema, TypedConf)) of
+        {errorlist, EList} -> EList;
+        _ -> []
+    end,
+    TranslationErrors = collect_translation_errors(Schema, TypedConf),
+    AllErrors = DefaultErrors ++ SubErrors ++ TypeErrors ++ ValidationErrors ++ TranslationErrors,
+    case AllErrors of
+        [] -> ok;
+        _  -> {error, {errorlist, AllErrors}}
+    end.
+
+%% @doc Runs apply_mappings and apply_translations to collect translation
+%% errors without caring about the resulting config.
+%% Translation errors have no other logging path, so each is logged here.
+-spec collect_translation_errors(cuttlefish_schema:schema(), cuttlefish_conf:conf()) ->
+    [cuttlefish_error:error()].
+collect_translation_errors(Schema, TypedConf) ->
+    {DirectMappings, TranslationsToDrop} = apply_mappings(Schema, TypedConf),
+    case apply_translations(Schema, TypedConf, DirectMappings, TranslationsToDrop) of
+        {error, _, {errorlist, Errors}} ->
+            _ = [?LOG_ERROR(cuttlefish_error:xlate(E)) || E <- Errors],
+            Errors;
+        _ -> []
     end.
 
 -ifdef(TEST).
@@ -1668,4 +1714,54 @@ alias_msg_end_to_end_singular_test() ->
     ]),
     Result = map(Schema, [{["old", "key"], "42"}]),
     ?assertEqual(42, proplists:get_value(setting, proplists:get_value(app, Result))).
+
+validate_ok_test() ->
+    Mappings = [
+        cuttlefish_mapping:parse({mapping, "integer_thing", "to.int",
+                                  [{datatype, integer}, {default, 32}]}),
+        cuttlefish_mapping:parse({mapping, "enum_thing", "to.enum",
+                                  [{datatype, {enum, [on, off]}}, {default, on}]})
+    ],
+    Conf = [{["integer_thing"], "32"}, {["enum_thing"], "on"}],
+    ?assertEqual(ok, validate({[], Mappings, []}, Conf)),
+    ok.
+
+%% validate/3 must collect errors from all phases that can still run, not stop
+%% at the first failing phase as map/3 does. This test has a type error on one
+%% key and a translation error on a different key; both must appear in the
+%% result even though map/3 would stop before reaching the translation phase.
+validate_collects_errors_across_phases_test() ->
+    Mappings = [
+        cuttlefish_mapping:parse({mapping, "bad_type", "to.int",
+                                  [{datatype, integer}]}),
+        cuttlefish_mapping:parse({mapping, "good_key", "to.str",
+                                  [{datatype, string}]})
+    ],
+    Translations = [
+        cuttlefish_translation:parse(
+            {translation, "to.str", fun(_Conf) -> cuttlefish:invalid("deliberate") end})
+    ],
+    Conf = [{["bad_type"], "not_an_integer"}, {["good_key"], "hello"}],
+    Schema = {Translations, Mappings, []},
+    %% `map/3` stops at transform_datatypes and never reaches the translation
+    ?assertMatch({error, transform_datatypes, _}, map(Schema, Conf)),
+    %% `validate/3` collects errors from both phases
+    Result = validate(Schema, Conf),
+    ?assertMatch({error, {errorlist, [_|_]}}, Result),
+    {error, {errorlist, Errors}} = Result,
+    Tags = [element(1, element(2, E)) || E <- Errors],
+    ?assert(lists:member(transform_type, Tags)),
+    ?assert(lists:member(translation_invalid_configuration, Tags)),
+    ok.
+
+validate_unknown_variable_test() ->
+    Mappings = [
+        cuttlefish_mapping:parse({mapping, "known_key", "to.int",
+                                  [{datatype, integer}, {default, 0}]})
+    ],
+    Conf = [{["unknown_key"], "42"}],
+    Result = validate({[], Mappings, []}, Conf),
+    ?assertMatch({error, {errorlist, [{error, {unknown_variable, _}}|_]}}, Result),
+    ok.
+
 -endif.

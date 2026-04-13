@@ -128,7 +128,9 @@ main(Args) ->
         effective ->
             effective(ParsedArgs);
         describe ->
-            describe(ParsedArgs, Extra)
+            describe(ParsedArgs, Extra);
+        validate ->
+            validate(ParsedArgs)
     end.
 
 %% This shows the effective configuration, including defaults
@@ -181,6 +183,50 @@ effective(ParsedArgs) ->
             ?STDOUT("Effective config is only visible for cuttlefish conf files.", [])
     end,
     ok.
+
+%% Validates the configuration against the schema without writing any files.
+%% Exits 0 if valid, 1 if there are errors.
+validate(ParsedArgs) ->
+    _ = ?LOG_DEBUG("cuttlefish `validate`", []),
+    EtcDir = proplists:get_value(etc_dir, ParsedArgs),
+    Schema = load_schema(ParsedArgs),
+    Conf = load_conf(ParsedArgs),
+    AdvancedConfigFile = proplists:get_value(advanced_conf_file, ParsedArgs,
+                                             filename:join(EtcDir, "advanced.config")),
+    _ = validate_advanced_config(AdvancedConfigFile),
+    case cuttlefish_generator:validate(Schema, Conf, ParsedArgs) of
+        ok ->
+            ?STDOUT("Configuration is valid.", []),
+            stop_ok();
+        {error, {errorlist, Errors}} ->
+            %% Individual errors are already logged by the generator phases
+            %% that produce them. Only the summary goes to stdout here.
+            Count = length(Errors),
+            Noun = case Count of 1 -> "error"; _ -> "errors" end,
+            ?STDOUT("~b ~ts — configuration is INVALID", [Count, Noun]),
+            stop_deactivate()
+    end.
+
+%% Checks that advanced.config, if present, is parseable and well-formed.
+validate_advanced_config(AdvancedConfigFile) ->
+    case filelib:is_file(AdvancedConfigFile) of
+        false ->
+            ok;
+        true ->
+            _ = ?LOG_DEBUG("~ts detected, checking syntax", [AdvancedConfigFile]),
+            case file:consult(AdvancedConfigFile) of
+                {ok, [_]} ->
+                    ok;
+                {ok, OtherTerms} ->
+                    _ = ?LOG_ERROR("Error parsing ~ts, incorrect format: ~tp",
+                                   [AdvancedConfigFile, OtherTerms]),
+                    stop_deactivate();
+                {error, Error} ->
+                    _ = ?LOG_ERROR("Error parsing ~ts: ~ts",
+                                   [AdvancedConfigFile, file:format_error(Error)]),
+                    stop_deactivate()
+            end
+    end.
 
 %% This is the function that dumps the docs for a single setting
 describe(_ParsedArgs, []) ->
