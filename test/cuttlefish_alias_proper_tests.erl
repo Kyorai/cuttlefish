@@ -19,8 +19,15 @@ multi_alias_idempotent_test()          -> ?PROP(prop_multi_alias_idempotent()).
 multi_alias_no_alias_keys_survive_test() -> ?PROP(prop_multi_alias_no_alias_keys_survive()).
 multi_alias_first_wins_test()          -> ?PROP(prop_multi_alias_first_wins()).
 
+%% Properties: aliases with custom messages
+msg_idempotent_test()             -> ?PROP(prop_msg_idempotent()).
+msg_no_alias_keys_survive_test()  -> ?PROP(prop_msg_no_alias_keys_survive()).
+msg_canonical_preserved_test()    -> ?PROP(prop_msg_canonical_preserved()).
+msg_alias_value_promoted_test()   -> ?PROP(prop_msg_alias_value_promoted()).
+msg_messages_preserved_test()     -> ?PROP(prop_msg_messages_preserved()).
+
 %%
-%% Properties — single alias per mapping
+%% Properties: single alias per mapping
 %%
 
 %% Alias resolution is idempotent: after the first pass all aliases are
@@ -91,7 +98,7 @@ prop_alias_value_promoted() ->
         end).
 
 %%
-%% Properties — multiple aliases per mapping
+%% Properties: multiple aliases per mapping
 %%
 
 prop_multi_alias_idempotent() ->
@@ -142,6 +149,71 @@ prop_multi_alias_first_wins() ->
         end).
 
 %%
+%% Properties: aliases with custom messages
+%%
+
+prop_msg_idempotent() ->
+    ?FORALL({Conf, Mappings}, gen_conf_with_msg_aliases(),
+        begin
+            Once = cuttlefish_generator:resolve_aliases(Conf, Mappings),
+            Twice = cuttlefish_generator:resolve_aliases(Once, Mappings),
+            Once =:= Twice
+        end).
+
+prop_msg_no_alias_keys_survive() ->
+    ?FORALL({Conf, Mappings}, gen_conf_with_msg_aliases(),
+        begin
+            Resolved = cuttlefish_generator:resolve_aliases(Conf, Mappings),
+            AllAliases = lists:flatmap(
+                fun cuttlefish_mapping:aliases/1, Mappings),
+            ResolvedKeys = [K || {K, _} <- Resolved],
+            lists:all(
+                fun(A) -> not lists:member(A, ResolvedKeys) end,
+                AllAliases)
+        end).
+
+prop_msg_canonical_preserved() ->
+    ?FORALL({Conf, Mappings}, gen_conf_with_msg_aliases(),
+        begin
+            Resolved = cuttlefish_generator:resolve_aliases(Conf, Mappings),
+            lists:all(fun(Mapping) ->
+                Canonical = cuttlefish_mapping:variable(Mapping),
+                case proplists:get_value(Canonical, Conf) of
+                    undefined -> true;
+                    Val -> proplists:get_value(Canonical, Resolved) =:= Val
+                end
+            end, Mappings)
+        end).
+
+prop_msg_alias_value_promoted() ->
+    ?FORALL({Conf, Mappings}, gen_conf_with_msg_aliases(),
+        begin
+            Resolved = cuttlefish_generator:resolve_aliases(Conf, Mappings),
+            lists:all(fun(Mapping) ->
+                Canonical = cuttlefish_mapping:variable(Mapping),
+                [Alias] = cuttlefish_mapping:aliases(Mapping),
+                CanonicalInInput = proplists:get_value(Canonical, Conf),
+                AliasInInput = proplists:get_value(Alias, Conf),
+                case {CanonicalInInput, AliasInInput} of
+                    {undefined, undefined} -> true;
+                    {undefined, AliasVal} ->
+                        proplists:get_value(Canonical, Resolved) =:= AliasVal;
+                    {_, _} -> true
+                end
+            end, Mappings)
+        end).
+
+%% A parse and aliases_with_messages round-trip.
+prop_msg_messages_preserved() ->
+    ?FORALL({_Conf, Mappings, ExpectedMessages}, gen_conf_with_msg_aliases_and_expected(),
+        begin
+            lists:all(fun({Mapping, ExpMsg}) ->
+                [{_Var, ActualMsg}] = cuttlefish_mapping:aliases_with_messages(Mapping),
+                ActualMsg =:= ExpMsg
+            end, lists:zip(Mappings, ExpectedMessages))
+        end).
+
+%%
 %% Generators
 %%
 
@@ -165,15 +237,18 @@ gen_conf_with_aliases() ->
             Mappings =/= [])).
 
 gen_conf_with_aliases_raw(N) ->
-    ?LET(Pairs, vector(N, {gen_conf_key(), gen_conf_key()}),
+    ?LET(Pairs, vector(N, {gen_conf_key(), gen_conf_key(), gen_alias_form()}),
         begin
-            {UniquePairs, _Seen} = deduplicate_keys(Pairs),
+            {UniquePairs, _Seen} = deduplicate_keys(
+                [{C, A} || {C, A, _} <- Pairs]),
+            FormMap = maps:from_list([{C, F} || {C, _, F} <- Pairs]),
             Mappings = [cuttlefish_mapping:parse(
                 {mapping,
                  cuttlefish_variable:format(Canonical),
                  "app." ++ cuttlefish_variable:format(Canonical),
                  [{datatype, string},
-                  {aliases, [cuttlefish_variable:format(Alias)]}]}
+                  alias_prop(maps:get(Canonical, FormMap, plural),
+                             cuttlefish_variable:format(Alias))]}
             ) || {Canonical, Alias} <- UniquePairs],
             ?LET(Choices, vector(length(UniquePairs), gen_conf_entry_choice()),
                 begin
@@ -249,6 +324,81 @@ gen_conf_with_multi_aliases_raw(N) ->
                     {Conf, Mappings}
                 end)
         end).
+
+gen_conf_with_msg_aliases() ->
+    ?LET(N, range(1, 5),
+        ?SUCHTHAT({_Conf, Mappings}, gen_conf_with_msg_aliases_raw(N),
+            Mappings =/= [])).
+
+gen_optional_message() ->
+    oneof([undefined, non_empty(list(oneof([choose($a, $z), $\s, choose($0, $9)])))]).
+
+gen_conf_with_msg_aliases_raw(N) ->
+    ?LET(Quads, vector(N, {gen_conf_key(), gen_conf_key(), gen_optional_message(), gen_alias_form()}),
+        begin
+            Triples = [{C, A, M} || {C, A, M, _} <- Quads],
+            FormMap = maps:from_list([{C, F} || {C, _, _, F} <- Quads]),
+            {PairsWithMsgs, Mappings} = build_msg_alias_mappings(Triples, FormMap),
+            ?LET(Choices, vector(length(PairsWithMsgs), gen_conf_entry_choice()),
+                begin
+                    Conf = lists:flatmap(fun({{Canonical, Alias, _Msg}, Choice}) ->
+                        case Choice of
+                            canonical_only -> [{Canonical, "canonical_val"}];
+                            alias_only     -> [{Alias, "alias_val"}];
+                            both           -> [{Canonical, "canonical_val"},
+                                               {Alias, "alias_val"}];
+                            neither        -> []
+                        end
+                    end, lists:zip(PairsWithMsgs, Choices)),
+                    {Conf, Mappings}
+                end)
+        end).
+
+gen_conf_with_msg_aliases_and_expected() ->
+    ?LET(N, range(1, 5),
+        ?SUCHTHAT({_Conf, Mappings, _Msgs}, gen_conf_with_msg_aliases_and_expected_raw(N),
+            Mappings =/= [])).
+
+gen_conf_with_msg_aliases_and_expected_raw(N) ->
+    ?LET(Quads, vector(N, {gen_conf_key(), gen_conf_key(), gen_optional_message(), gen_alias_form()}),
+        begin
+            Triples = [{C, A, M} || {C, A, M, _} <- Quads],
+            FormMap = maps:from_list([{C, F} || {C, _, _, F} <- Quads]),
+            {PairsWithMsgs, Mappings} = build_msg_alias_mappings(Triples, FormMap),
+            ExpectedMessages = [Msg || {_, _, Msg} <- PairsWithMsgs],
+            {[], Mappings, ExpectedMessages}
+        end).
+
+build_msg_alias_mappings(Triples, FormMap) ->
+    %% Deduplicate, keeping messages attached to their canonical-alias pairs
+    {PairsWithMsgs, _Seen} = lists:foldl(fun({C, A, Msg}, {Acc, Seen}) ->
+        case lists:member(C, Seen) orelse
+             lists:member(A, Seen) orelse
+             C =:= A of
+            true  -> {Acc, Seen};
+            false -> {[{C, A, Msg} | Acc], [C, A | Seen]}
+        end
+    end, {[], []}, Triples),
+    Mappings = [cuttlefish_mapping:parse(
+        {mapping,
+         cuttlefish_variable:format(Canonical),
+         "app." ++ cuttlefish_variable:format(Canonical),
+         [{datatype, string},
+          alias_prop(maps:get(Canonical, FormMap, plural),
+                    alias_entry(Alias, Msg))]}
+    ) || {Canonical, Alias, Msg} <- PairsWithMsgs],
+    {PairsWithMsgs, Mappings}.
+
+alias_entry(Alias, undefined) ->
+    cuttlefish_variable:format(Alias);
+alias_entry(Alias, Msg) ->
+    {cuttlefish_variable:format(Alias), Msg}.
+
+gen_alias_form() ->
+    elements([singular, plural]).
+
+alias_prop(singular, Entry) -> {alias, Entry};
+alias_prop(plural, Entry)   -> {aliases, [Entry]}.
 
 %% Helpers
 

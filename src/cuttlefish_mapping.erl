@@ -39,7 +39,7 @@
         is_merge = false :: boolean(),
         see = [] :: [cuttlefish_variable:variable()],
         hidden = false :: boolean(),
-        aliases = [] :: [cuttlefish_variable:variable()]
+        aliases = [] :: [{cuttlefish_variable:variable(), string() | undefined}]
     }).
 
 -type mapping() :: #mapping{}.
@@ -67,7 +67,8 @@
     validators/1,
     validators/2,
     remove_all_but_first/2,
-    aliases/1
+    aliases/1,
+    aliases_with_messages/1
     ]).
 
 -spec parse(raw_mapping()) -> mapping() | cuttlefish_error:error().
@@ -126,6 +127,7 @@ parse_aliases(Variable, VarTokenized, Proplist, IsMerge) ->
                        proplists:get_value(aliases, Proplist)} of
         {undefined, undefined} -> undefined;
         {Single, undefined} when is_list(Single) -> [Single];
+        {{S, M} = Single, undefined} when is_list(S), is_list(M) -> [Single];
         {Single, undefined} -> {error, {alias_not_a_string, Variable, Single}};
         {undefined, Multi} -> Multi;
         {_, _} -> {error, {alias_and_aliases_both_set, Variable}}
@@ -144,25 +146,51 @@ validate_raw_aliases(Variable, _VarTokenized, [H|_], _IsMerge) when is_integer(H
     %% Bare string: {aliases, "old.key"} instead of {aliases, ["old.key"]}
     {error, {aliases_is_bare_string, Variable}};
 validate_raw_aliases(Variable, VarTokenized, RawAliases, _IsMerge) when is_list(RawAliases) ->
-    TokenizedAliases = [cuttlefish_variable:tokenize(A) || A <- RawAliases],
-    case lists:member(VarTokenized, TokenizedAliases) of
-        true ->
-            {error, {alias_is_self, Variable}};
-        false ->
-            case length(lists:usort(TokenizedAliases)) < length(TokenizedAliases) of
+    case normalize_alias_entries(Variable, RawAliases) of
+        {error, _} = E -> E;
+        Entries ->
+            TokenizedEntries = [{cuttlefish_variable:tokenize(A), Msg}
+                                || {A, Msg} <- Entries],
+            TokenizedVars = [Var || {Var, _} <- TokenizedEntries],
+            case lists:member(VarTokenized, TokenizedVars) of
                 true ->
-                    {error, {aliases_contain_duplicates, Variable}};
+                    {error, {alias_is_self, Variable}};
                 false ->
-                    case first_fuzzy_alias(TokenizedAliases) of
-                        {fuzzy, FuzzyAlias} ->
-                            {error, {fuzzy_alias_unsupported, Variable, cuttlefish_variable:format(FuzzyAlias)}};
-                        ok ->
-                            TokenizedAliases
+                    case length(lists:usort(TokenizedVars)) < length(TokenizedVars) of
+                        true ->
+                            {error, {aliases_contain_duplicates, Variable}};
+                        false ->
+                            case first_fuzzy_alias(TokenizedVars) of
+                                {fuzzy, FuzzyAlias} ->
+                                    {error, {fuzzy_alias_unsupported, Variable,
+                                             cuttlefish_variable:format(FuzzyAlias)}};
+                                ok ->
+                                    TokenizedEntries
+                            end
                     end
             end
     end;
 validate_raw_aliases(Variable, _VarTokenized, BadValue, _IsMerge) ->
     {error, {aliases_invalid_value, Variable, BadValue}}.
+
+normalize_alias_entries(_Variable, []) -> [];
+normalize_alias_entries(Variable, [H|T]) ->
+    case normalize_alias_entry(Variable, H) of
+        {error, _} = E -> E;
+        Entry ->
+            case normalize_alias_entries(Variable, T) of
+                {error, _} = E2 -> E2;
+                Rest -> [Entry | Rest]
+            end
+    end.
+
+normalize_alias_entry(_Variable, AliasStr) when is_list(AliasStr) ->
+    {AliasStr, undefined};
+normalize_alias_entry(_Variable, {AliasStr, Message})
+  when is_list(AliasStr), is_list(Message) ->
+    {AliasStr, Message};
+normalize_alias_entry(Variable, Bad) ->
+    {error, {alias_not_a_string, Variable, Bad}}.
 
 -spec first_fuzzy_alias([cuttlefish_variable:variable()]) -> ok | {fuzzy, cuttlefish_variable:variable()}.
 first_fuzzy_alias([]) ->
@@ -229,11 +257,11 @@ choose(Field, {_, _, _, PreParseMergeProps}, MergeMapping, OldMapping) ->
                 {_, true, _} -> new;
                 _ -> old
     end,
-    case Which of
-        new ->
-            ?MODULE:Field(MergeMapping);
-        old ->
-            ?MODULE:Field(OldMapping)
+    case {Which, Field} of
+        {new, aliases} -> aliases_with_messages(MergeMapping);
+        {old, aliases} -> aliases_with_messages(OldMapping);
+        {new, _}       -> ?MODULE:Field(MergeMapping);
+        {old, _}       -> ?MODULE:Field(OldMapping)
     end.
 
 -spec is_mapping(any()) -> boolean().
@@ -285,7 +313,11 @@ new_conf_value(M) -> M#mapping.new_conf_value.
 validators(M) -> M#mapping.validators.
 
 -spec aliases(mapping()) -> [cuttlefish_variable:variable()].
-aliases(M) -> M#mapping.aliases.
+aliases(M) -> [Var || {Var, _Msg} <- M#mapping.aliases].
+
+-spec aliases_with_messages(mapping()) ->
+    [{cuttlefish_variable:variable(), string() | undefined}].
+aliases_with_messages(M) -> M#mapping.aliases.
 
 -spec validators(mapping(), [cuttlefish_validator:validator()]) -> [cuttlefish_validator:validator()].
 validators(M, Validators) ->
@@ -618,11 +650,14 @@ aliases_parse_test() ->
     M = parse({mapping, "new.key", "app.setting", [
         {aliases, ["old.key", "older.key"]}
     ]}),
-    ?assertEqual([["old", "key"], ["older", "key"]], aliases(M)).
+    ?assertEqual([["old", "key"], ["older", "key"]], aliases(M)),
+    ?assertEqual([{["old", "key"], undefined}, {["older", "key"], undefined}],
+                 aliases_with_messages(M)).
 
 aliases_omitted_test() ->
     M = parse({mapping, "new.key", "app.setting", []}),
-    ?assertEqual([], aliases(M)).
+    ?assertEqual([], aliases(M)),
+    ?assertEqual([], aliases_with_messages(M)).
 
 aliases_empty_list_error_test() ->
     Result = parse({mapping, "a.b", "app.setting", [{aliases, []}]}),
@@ -642,7 +677,8 @@ alias_singular_test() ->
     M = parse({mapping, "new.key", "app.setting", [
         {alias, "old.key"}
     ]}),
-    ?assertEqual([["old", "key"]], aliases(M)).
+    ?assertEqual([["old", "key"]], aliases(M)),
+    ?assertEqual([{["old", "key"], undefined}], aliases_with_messages(M)).
 
 alias_singular_self_error_test() ->
     Result = parse({mapping, "a.b", "app.setting", [{alias, "a.b"}]}),
@@ -686,6 +722,63 @@ aliases_fuzzy_error_test() ->
     ]}),
     ?assertMatch({error, {fuzzy_alias_unsupported, _, _}}, Result).
 
+%% Alias with message parsing tests
+
+aliases_with_message_test() ->
+    M = parse({mapping, "new.key", "app.setting", [
+        {aliases, [{"old.key", "renamed in 4.0"}]}
+    ]}),
+    ?assertEqual([["old", "key"]], aliases(M)),
+    ?assertEqual([{["old", "key"], "renamed in 4.0"}],
+                 aliases_with_messages(M)).
+
+aliases_mixed_with_and_without_message_test() ->
+    M = parse({mapping, "new.key", "app.setting", [
+        {aliases, ["old.key", {"older.key", "legacy name"}]}
+    ]}),
+    ?assertEqual([["old", "key"], ["older", "key"]], aliases(M)),
+    ?assertEqual([{["old", "key"], undefined},
+                  {["older", "key"], "legacy name"}],
+                 aliases_with_messages(M)).
+
+alias_singular_with_message_test() ->
+    M = parse({mapping, "new.key", "app.setting", [
+        {alias, {"old.key", "consolidated in 4.0"}}
+    ]}),
+    ?assertEqual([["old", "key"]], aliases(M)),
+    ?assertEqual([{["old", "key"], "consolidated in 4.0"}],
+                 aliases_with_messages(M)).
+
+aliases_with_message_self_error_test() ->
+    Result = parse({mapping, "a.b", "app.setting", [
+        {aliases, [{"a.b", "msg"}]}
+    ]}),
+    ?assertMatch({error, {alias_is_self, _}}, Result).
+
+aliases_with_message_duplicate_error_test() ->
+    Result = parse({mapping, "a.b", "app.setting", [
+        {aliases, [{"old.key", "msg1"}, {"old.key", "msg2"}]}
+    ]}),
+    ?assertMatch({error, {aliases_contain_duplicates, _}}, Result).
+
+aliases_with_message_fuzzy_error_test() ->
+    Result = parse({mapping, "a.b", "app.setting", [
+        {aliases, [{"old.$name.key", "msg"}]}
+    ]}),
+    ?assertMatch({error, {fuzzy_alias_unsupported, _, _}}, Result).
+
+aliases_with_bad_message_type_error_test() ->
+    Result = parse({mapping, "a.b", "app.setting", [
+        {aliases, [{"old.key", 42}]}
+    ]}),
+    ?assertMatch({error, {alias_not_a_string, "a.b", {"old.key", 42}}}, Result).
+
+aliases_tuple_not_string_error_test() ->
+    Result = parse({mapping, "a.b", "app.setting", [
+        {aliases, [{42, "msg"}]}
+    ]}),
+    ?assertMatch({error, {alias_not_a_string, "a.b", {42, "msg"}}}, Result).
+
 aliases_merge_replaces_test() ->
     OldM = parse({mapping, "a.b", "app.x", [
         {default, 1}, {datatype, integer}, {aliases, ["old.ab"]}
@@ -714,7 +807,6 @@ aliases_merge_singular_replaces_test() ->
     ?assertEqual(1, default(Merged)).
 
 aliases_merge_empty_clears_test() ->
-    %% Explicit {aliases, []} in merge mapping clears inherited aliases
     OldM = parse({mapping, "a.b", "app.x", [
         {default, 1}, {datatype, integer}, {aliases, ["old.ab"]}
     ]}),
@@ -723,5 +815,18 @@ aliases_merge_empty_clears_test() ->
     ?assertEqual([], aliases(Merged)),
     ?assertEqual(1, default(Merged)),
     ?assertEqual([integer], datatype(Merged)).
+
+aliases_merge_with_message_test() ->
+    OldM = parse({mapping, "a.b", "app.x", [
+        {default, 1}, {datatype, integer}, {aliases, ["old.ab"]}
+    ]}),
+    NewRaw = {mapping, "a.b", "app.x", [merge,
+        {aliases, [{"old.ab", "renamed in 4.0"}]}
+    ]},
+    [Merged] = parse_and_merge(NewRaw, [OldM]),
+    ?assertEqual([["old", "ab"]], aliases(Merged)),
+    ?assertEqual([{["old", "ab"], "renamed in 4.0"}],
+                 aliases_with_messages(Merged)),
+    ?assertEqual(1, default(Merged)).
 
 -endif.
