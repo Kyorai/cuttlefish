@@ -173,7 +173,19 @@ xlate({alias_shadows_canonical, {Alias, OwnerMapping}}) ->
                   [Alias, OwnerMapping, Alias]);
 xlate({alias_claimed_by_multiple_mappings, {Alias, Mapping1, Mapping2}}) ->
     io_lib:format("Alias ~ts is claimed by both ~ts and ~ts",
-                  [Alias, Mapping1, Mapping2]).
+                  [Alias, Mapping1, Mapping2]);
+xlate({unsupported_collect_type, {proplist, binary}}) ->
+    "collect type {proplist, binary} is not supported; "
+    "use {proplist, atom} for atom keys or {map, binary} for binary keys";
+xlate({invalid_collect_type, Value}) ->
+    io_lib:format("Invalid collect type ~tp. Valid types: list, {map, atom}, "
+                  "{map, binary}, {proplist, atom}", [Value]);
+xlate({collect_on_non_fuzzy, Variable}) ->
+    io_lib:format("collect property on mapping ~ts requires a wildcard ($) segment "
+                  "in the variable name", [Variable]);
+xlate({collect_multi_wildcard, Variable, N}) ->
+    io_lib:format("collect property on mapping ~ts has ~B wildcard segments; "
+                  "only a single wildcard is supported", [Variable, N]).
 
 -spec contains_error(list()) -> boolean().
 contains_error(List) ->

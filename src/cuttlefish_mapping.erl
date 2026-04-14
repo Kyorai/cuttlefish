@@ -25,6 +25,11 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
+-type collection_type() :: list
+                      | {map, atom}
+                      | {map, binary}
+                      | {proplist, atom}.
+
 -record(mapping, {
         variable::cuttlefish_variable:variable(),
         mapping::string(),
@@ -39,12 +44,13 @@
         is_merge = false :: boolean(),
         see = [] :: [cuttlefish_variable:variable()],
         hidden = false :: boolean(),
-        aliases = [] :: [{cuttlefish_variable:variable(), string() | undefined}]
+        aliases = [] :: [{cuttlefish_variable:variable(), string() | undefined}],
+        collect = undefined :: collection_type() | undefined
     }).
 
 -type mapping() :: #mapping{}.
 -type raw_mapping() :: {mapping, string(), string(), [proplists:property()]}.
--export_type([mapping/0]).
+-export_type([mapping/0, collection_type/0]).
 
 -export([
     parse/1,
@@ -68,7 +74,8 @@
     validators/2,
     remove_all_but_first/2,
     aliases/1,
-    aliases_with_messages/1
+    aliases_with_messages/1,
+    collect/1
     ]).
 
 -spec parse(raw_mapping()) -> mapping() | cuttlefish_error:error().
@@ -94,28 +101,44 @@ parse({mapping, Variable, Mapping, Proplist}) ->
     VarTokenized = cuttlefish_variable:tokenize(Variable),
     IsMerge = proplists:is_defined(merge, Proplist),
     AliasesResult = parse_aliases(Variable, VarTokenized, Proplist, IsMerge),
+    CollectResult = parse_collect(proplists:get_value(collect, Proplist)),
 
-    case {Datatype, AliasesResult} of
-        {{error, _}, _} ->
+    case {Datatype, AliasesResult, CollectResult} of
+        {{error, _}, _, _} ->
             Datatype;
-        {_, {error, _} = AliasError} ->
+        {_, {error, _} = AliasError, _} ->
             AliasError;
-        {_, TokenizedAliases} ->
-            #mapping{
-                variable = VarTokenized,
-                default = proplists:get_value(default, Proplist),
-                commented = proplists:get_value(commented, Proplist),
-                mapping = Mapping,
-                level = proplists:get_value(level, Proplist, basic),
-                datatype = Datatype,
-                doc = proplists:get_value(doc, Proplist, []),
-                see = proplists:get_value(see, Proplist, []),
-                include_default = proplists:get_value(include_default, Proplist),
-                new_conf_value = proplists:get_value(new_conf_value, Proplist),
-                validators = proplists:get_value(validators, Proplist, []),
-                hidden = proplists:get_value(hidden, Proplist, false),
-                aliases = TokenizedAliases
-            }
+        {_, _, {error, _} = CollectError} ->
+            CollectError;
+        {_, TokenizedAliases, CollectType} ->
+            WildcardCount = length([S || S <- VarTokenized, hd(S) =:= $$]),
+            CollectError = case {CollectType, WildcardCount} of
+                {undefined, _}  -> ok;
+                {_, 0}          -> {error, {collect_on_non_fuzzy, Variable}};
+                {_, N} when N > 1 -> {error, {collect_multi_wildcard, Variable, N}};
+                {_, 1}          -> ok
+            end,
+            case CollectError of
+                {error, _} ->
+                    CollectError;
+                ok ->
+                    #mapping{
+                        variable = VarTokenized,
+                        default = proplists:get_value(default, Proplist),
+                        commented = proplists:get_value(commented, Proplist),
+                        mapping = Mapping,
+                        level = proplists:get_value(level, Proplist, basic),
+                        datatype = Datatype,
+                        doc = proplists:get_value(doc, Proplist, []),
+                        see = proplists:get_value(see, Proplist, []),
+                        include_default = proplists:get_value(include_default, Proplist),
+                        new_conf_value = proplists:get_value(new_conf_value, Proplist),
+                        validators = proplists:get_value(validators, Proplist, []),
+                        hidden = proplists:get_value(hidden, Proplist, false),
+                        aliases = TokenizedAliases,
+                        collect = CollectType
+                    }
+            end
     end;
 parse(X) ->
     {error, {mapping_parse, X}}.
@@ -248,7 +271,8 @@ merge(NewMappingSource, OldMapping) ->
                 validators = choose(validators, NewMappingSource, MergeMapping, OldMapping),
                 see = choose(see, NewMappingSource, MergeMapping, OldMapping),
                 hidden = choose(hidden, NewMappingSource, MergeMapping, OldMapping),
-                aliases = choose(aliases, NewMappingSource, MergeMapping, OldMapping)
+                aliases = choose(aliases, NewMappingSource, MergeMapping, OldMapping),
+                collect = choose(collect, NewMappingSource, MergeMapping, OldMapping)
             }
     end.
 
@@ -326,6 +350,9 @@ aliases(M) -> [Var || {Var, _Msg} <- M#mapping.aliases].
     [{cuttlefish_variable:variable(), string() | undefined}].
 aliases_with_messages(M) -> M#mapping.aliases.
 
+-spec collect(mapping()) -> collection_type() | undefined.
+collect(M) -> M#mapping.collect.
+
 -spec validators(mapping(), [cuttlefish_validator:validator()]) -> [cuttlefish_validator:validator()].
 validators(M, Validators) ->
     lists:foldr(fun(VName, Vs) ->
@@ -353,6 +380,16 @@ remove_all_but_first(MappingName, Mappings) ->
             (M, Acc) ->
                 [M|Acc]
         end, [], Mappings).
+
+-spec parse_collect(term()) -> collection_type() | undefined | cuttlefish_error:error().
+parse_collect(undefined)        -> undefined;
+parse_collect(list)             -> list;
+parse_collect({map, atom})      -> {map, atom};
+parse_collect({map, binary})    -> {map, binary};
+parse_collect({proplist, atom}) -> {proplist, atom};
+%% If {proplist, binary} is given, reject it; use {map, binary} for binary keys.
+parse_collect({proplist, binary}) -> {error, {unsupported_collect_type, {proplist, binary}}};
+parse_collect(Other)            -> {error, {invalid_collect_type, Other}}.
 
 -ifdef(TEST).
 
@@ -785,6 +822,77 @@ aliases_tuple_not_string_error_test() ->
         {aliases, [{42, "msg"}]}
     ]}),
     ?assertMatch({error, {alias_not_a_string, "a.b", {42, "msg"}}}, Result).
+
+%% Collect parse tests
+
+collect_omitted_test() ->
+    M = parse({mapping, "prefix.$name", "app.key", [{datatype, integer}]}),
+    ?assertEqual(undefined, collect(M)).
+
+collect_list_test() ->
+    M = parse({mapping, "prefix.$name", "app.key", [
+        {datatype, integer}, {collect, list}
+    ]}),
+    ?assertEqual(list, collect(M)).
+
+collect_map_atom_test() ->
+    M = parse({mapping, "prefix.$name", "app.key", [
+        {collect, {map, atom}}
+    ]}),
+    ?assertEqual({map, atom}, collect(M)).
+
+collect_map_binary_test() ->
+    M = parse({mapping, "prefix.$name", "app.key", [
+        {collect, {map, binary}}
+    ]}),
+    ?assertEqual({map, binary}, collect(M)).
+
+collect_proplist_atom_test() ->
+    M = parse({mapping, "prefix.$name", "app.key", [
+        {collect, {proplist, atom}}
+    ]}),
+    ?assertEqual({proplist, atom}, collect(M)).
+
+collect_invalid_type_test() ->
+    Result = parse({mapping, "prefix.$name", "app.key", [
+        {collect, not_valid}
+    ]}),
+    ?assertMatch({error, {invalid_collect_type, not_valid}}, Result).
+
+collect_proplist_binary_unsupported_test() ->
+    Result = parse({mapping, "prefix.$name", "app.key", [
+        {collect, {proplist, binary}}
+    ]}),
+    ?assertMatch({error, {unsupported_collect_type, {proplist, binary}}}, Result).
+
+collect_on_non_fuzzy_test() ->
+    Result = parse({mapping, "no.wildcard", "app.key", [
+        {collect, list}
+    ]}),
+    ?assertMatch({error, {collect_on_non_fuzzy, "no.wildcard"}}, Result).
+
+collect_multi_wildcard_test() ->
+    Result = parse({mapping, "a.$x.b.$y", "app.key", [
+        {collect, list}
+    ]}),
+    ?assertMatch({error, {collect_multi_wildcard, "a.$x.b.$y", 2}}, Result).
+
+collect_merge_inherits_test() ->
+    OldM = parse({mapping, "p.$n", "app.x", [
+        {default, 1}, {datatype, integer}, {collect, list}
+    ]}),
+    NewRaw = {mapping, "p.$n", "app.x", [merge, {default, 2}]},
+    [Merged] = parse_and_merge(NewRaw, [OldM]),
+    ?assertEqual(list, collect(Merged)),
+    ?assertEqual(2, default(Merged)).
+
+collect_merge_replaces_test() ->
+    OldM = parse({mapping, "p.$n", "app.x", [
+        {default, 1}, {datatype, integer}, {collect, list}
+    ]}),
+    NewRaw = {mapping, "p.$n", "app.x", [merge, {collect, {map, atom}}]},
+    [Merged] = parse_and_merge(NewRaw, [OldM]),
+    ?assertEqual({map, atom}, collect(Merged)).
 
 aliases_merge_replaces_test() ->
     OldM = parse({mapping, "a.b", "app.x", [

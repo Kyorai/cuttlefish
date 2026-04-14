@@ -135,43 +135,95 @@ map_validate(Schema, Conf) ->
 -spec apply_mappings(cuttlefish_schema:schema(), cuttlefish_conf:conf()) ->
                             {[proplists:property()], [string()]}.
 apply_mappings({Translations, Mappings, _Validators}, Conf) ->
-    %% This fold handles 1:1 mappings, that have no corresponding translations
+    %% This fold handles 1:1 mappings, that have no corresponding translations.
     %% The accumulator is the app.config proplist that we start building from
     %% these 1:1 mappings, hence the return "DirectMappings".
     %% It also builds a list of "TranslationsToDrop". It's basically saying that
     %% if a user didn't actually configure this setting in the .conf file and
     %% there's no default in the schema, then there won't be enough information
-    %% during the translation phase to succeed, so we'll earmark it to be skipped
+    %% during the translation phase to succeed, so we'll earmark it to be skipped.
+    %% If a fuzzy mapping has a collect property and no translation, its values are auto-collected.
     {DirectMappings, {TranslationsToMaybeDrop, TranslationsToKeep}} = lists:foldr(
         fun(MappingRecord, {ConfAcc, {MaybeDrop, Keep}}) ->
             Mapping = cuttlefish_mapping:mapping(MappingRecord),
             Default = cuttlefish_mapping:default(MappingRecord),
             Variable = cuttlefish_mapping:variable(MappingRecord),
-            case {
-                Default =/= undefined orelse cuttlefish_conf:is_variable_defined(Variable, Conf),
-                lists:any(
-                    fun(T) ->
-                        cuttlefish_translation:mapping(T) =:= Mapping
-                    end,
-                    Translations)
-                } of
-                {true, false} ->
-                    Tokens = cuttlefish_variable:tokenize(Mapping),
-                    NewValue = proplists:get_value(Variable, Conf),
-                    {set_value(Tokens, ConfAcc, NewValue),
-                     {MaybeDrop, ordsets:add_element(Mapping,Keep)}};
-                {true, true} ->
-                    {ConfAcc, {MaybeDrop, ordsets:add_element(Mapping,Keep)}};
+            HasTranslation = lists:any(
+                fun(T) -> cuttlefish_translation:mapping(T) =:= Mapping end,
+                Translations),
+            CollectType = cuttlefish_mapping:collect(MappingRecord),
+            IsFuzzy = cuttlefish_mapping:is_fuzzy_variable(MappingRecord),
+            case {HasTranslation, CollectType =/= undefined andalso IsFuzzy} of
+                {false, true} ->
+                    collect_fuzzy_values(Variable, Mapping, CollectType, Conf,
+                                         ConfAcc, MaybeDrop, Keep);
                 _ ->
-                    {ConfAcc, {ordsets:add_element(Mapping,MaybeDrop), Keep}}
+                    case {Default =/= undefined orelse
+                          cuttlefish_conf:is_variable_defined(Variable, Conf),
+                          HasTranslation} of
+                        {true, false} ->
+                            Tokens = cuttlefish_variable:tokenize(Mapping),
+                            NewValue = proplists:get_value(Variable, Conf),
+                            {set_value(Tokens, ConfAcc, NewValue),
+                             {MaybeDrop, ordsets:add_element(Mapping, Keep)}};
+                        {true, true} ->
+                            {ConfAcc, {MaybeDrop, ordsets:add_element(Mapping, Keep)}};
+                        _ ->
+                            {ConfAcc, {ordsets:add_element(Mapping, MaybeDrop), Keep}}
+                    end
             end
         end,
-        {[], {ordsets:new(),ordsets:new()}},
+        {[], {ordsets:new(), ordsets:new()}},
         Mappings),
     _ = ?LOG_DEBUG("Applied 1:1 Mappings"),
 
     TranslationsToDrop = TranslationsToMaybeDrop -- TranslationsToKeep,
     {DirectMappings, TranslationsToDrop}.
+
+%% If there are no conf values matching the pattern, write an empty collection.
+-spec collect_fuzzy_values(
+        cuttlefish_variable:variable(), string(),
+        cuttlefish_mapping:collection_type(),
+        cuttlefish_conf:conf(),
+        [proplists:property()], ordsets:ordset(string()), ordsets:ordset(string())) ->
+    {[proplists:property()], {ordsets:ordset(string()), ordsets:ordset(string())}}.
+collect_fuzzy_values(Variable, Mapping, CollectType, Conf, ConfAcc, MaybeDrop, Keep) ->
+    Matches = cuttlefish_variable:fuzzy_matches(Variable, Conf),
+    Tokens = cuttlefish_variable:tokenize(Mapping),
+    Value = build_collect(Variable, Matches, CollectType, Conf),
+    {set_value(Tokens, ConfAcc, Value),
+     {MaybeDrop, ordsets:add_element(Mapping, Keep)}}.
+
+%% If multiple conf values match, assemble them into a collection, sorted by
+%% the wildcard segment value for list and proplist types.
+-spec build_collect(
+        cuttlefish_variable:variable(),
+        [{string(), string()}],
+        cuttlefish_mapping:collection_type(),
+        cuttlefish_conf:conf()) -> term().
+build_collect(Variable, Matches, list, Conf) ->
+    Entries = [{SegVal,
+                proplists:get_value(
+                    cuttlefish_variable:replace_match(Variable, SegVal), Conf)}
+               || {_WildcardSeg, SegVal} <- Matches],
+    [V || {_, V} <- lists:sort(Entries)];
+build_collect(Variable, Matches, {map, atom}, Conf) ->
+    maps:from_list(
+        [{list_to_atom(SegVal),
+          proplists:get_value(
+              cuttlefish_variable:replace_match(Variable, SegVal), Conf)}
+         || {_, SegVal} <- Matches]);
+build_collect(Variable, Matches, {map, binary}, Conf) ->
+    maps:from_list(
+        [{list_to_binary(SegVal),
+          proplists:get_value(
+              cuttlefish_variable:replace_match(Variable, SegVal), Conf)}
+         || {_, SegVal} <- Matches]);
+build_collect(Variable, Matches, {proplist, atom}, Conf) ->
+    [{list_to_atom(SegVal),
+      proplists:get_value(
+          cuttlefish_variable:replace_match(Variable, SegVal), Conf)}
+     || {_, SegVal} <- lists:sort(Matches)].
 
 -spec apply_translations(cuttlefish_schema:schema(), cuttlefish_conf:conf(), [proplists:property()], [string()]) ->
                                 [proplists:property()] |
@@ -1762,6 +1814,161 @@ validate_unknown_variable_test() ->
     Conf = [{["unknown_key"], "42"}],
     Result = validate({[], Mappings, []}, Conf),
     ?assertMatch({error, {errorlist, [{error, {unknown_variable, _}}|_]}}, Result),
+    ok.
+
+%% collect tests
+
+collect_list_generator_test() ->
+    Mappings = [
+        cuttlefish_mapping:parse({mapping, "listeners.tcp.$name", "rabbit.tcp_listeners", [
+            {datatype, integer},
+            {collect, list}
+        ]})
+    ],
+    Conf = [
+        {["listeners", "tcp", "default"], 5672},
+        {["listeners", "tcp", "tls"],    5671}
+    ],
+    Result = map({[], Mappings, []}, Conf),
+    ?assertMatch([{rabbit, [{tcp_listeners, _}]}], Result),
+    [{rabbit, [{tcp_listeners, Listeners}]}] = Result,
+    ?assertEqual([5671, 5672], lists:sort(Listeners)),
+    ok.
+
+collect_list_empty_generator_test() ->
+    %% If there are no matches, set the key with the value of [].
+    Mappings = [
+        cuttlefish_mapping:parse({mapping, "listeners.tcp.$name", "rabbit.tcp_listeners", [
+            {datatype, integer},
+            {collect, list}
+        ]})
+    ],
+    Conf = [],
+    Result = map({[], Mappings, []}, Conf),
+    ?assertEqual([{rabbit, [{tcp_listeners, []}]}], Result),
+    ok.
+
+collect_list_sort_generator_test() ->
+    %% Values are sorted by the $name segment.
+    Mappings = [
+        cuttlefish_mapping:parse({mapping, "auth_mechanisms.$name", "rabbit.auth_mechanisms", [
+            {datatype, atom},
+            {collect, list}
+        ]})
+    ],
+    Conf = [
+        {["auth_mechanisms", "plain"],     plain},
+        {["auth_mechanisms", "amqplain"], amqplain},
+        {["auth_mechanisms", "external"], external}
+    ],
+    Result = map({[], Mappings, []}, Conf),
+    ?assertMatch([{rabbit, [{auth_mechanisms, _}]}], Result),
+    [{rabbit, [{auth_mechanisms, Mechanisms}]}] = Result,
+    ?assertEqual([amqplain, external, plain], Mechanisms),
+    ok.
+
+collect_map_atom_empty_generator_test() ->
+    %% If there are no matches, set the key with the value of #{}.
+    Mappings = [
+        cuttlefish_mapping:parse({mapping, "deprecated_features.permit.$name",
+                                  "rabbit.permit_deprecated_features", [
+            {datatype, {enum, [true, false]}},
+            {collect, {map, atom}}
+        ]})
+    ],
+    Result = map({[], Mappings, []}, []),
+    ?assertEqual([{rabbit, [{permit_deprecated_features, #{}}]}], Result),
+    ok.
+
+collect_map_binary_empty_generator_test() ->
+    %% If there are no matches, set the key with the value of #{}.
+    Mappings = [
+        cuttlefish_mapping:parse({mapping, "tags.$name", "app.tags", [
+            {datatype, string},
+            {collect, {map, binary}}
+        ]})
+    ],
+    Result = map({[], Mappings, []}, []),
+    ?assertEqual([{app, [{tags, #{}}]}], Result),
+    ok.
+
+collect_map_atom_generator_test() ->
+    Mappings = [
+        cuttlefish_mapping:parse({mapping, "deprecated_features.permit.$name",
+                                  "rabbit.permit_deprecated_features", [
+            {datatype, {enum, [true, false]}},
+            {collect, {map, atom}}
+        ]})
+    ],
+    Conf = [
+        {["deprecated_features", "permit", "classic_queue_mirroring"], false},
+        {["deprecated_features", "permit", "transient_nonexcl_queues"],  true}
+    ],
+    Result = map({[], Mappings, []}, Conf),
+    ?assertMatch([{rabbit, [{permit_deprecated_features, _}]}], Result),
+    [{rabbit, [{permit_deprecated_features, M}]}] = Result,
+    ?assert(is_map(M)),
+    ?assertEqual(false, maps:get(classic_queue_mirroring, M)),
+    ?assertEqual(true,  maps:get(transient_nonexcl_queues, M)),
+    ok.
+
+collect_map_binary_generator_test() ->
+    Mappings = [
+        cuttlefish_mapping:parse({mapping, "tags.$name", "app.tags", [
+            {datatype, string},
+            {collect, {map, binary}}
+        ]})
+    ],
+    Conf = [
+        {["tags", "env"],  "production"},
+        {["tags", "team"], "platform"}
+    ],
+    Result = map({[], Mappings, []}, Conf),
+    ?assertMatch([{app, [{tags, _}]}], Result),
+    [{app, [{tags, M}]}] = Result,
+    ?assert(is_map(M)),
+    ?assertEqual("production", maps:get(<<"env">>,  M)),
+    ?assertEqual("platform",   maps:get(<<"team">>, M)),
+    ok.
+
+collect_proplist_atom_generator_test() ->
+    Mappings = [
+        cuttlefish_mapping:parse({mapping, "feature.$name", "app.features", [
+            {datatype, {enum, [true, false]}},
+            {collect, {proplist, atom}}
+        ]})
+    ],
+    Conf = [
+        {["feature", "alpha"], true},
+        {["feature", "beta"],  false}
+    ],
+    Result = map({[], Mappings, []}, Conf),
+    ?assertMatch([{app, [{features, _}]}], Result),
+    [{app, [{features, PL}]}] = Result,
+    ?assertEqual(true,  proplists:get_value(alpha, PL)),
+    ?assertEqual(false, proplists:get_value(beta,  PL)),
+    ok.
+
+collect_translation_takes_precedence_test() ->
+    %% If a translation and a collect mapping target the same key, the translation wins.
+    Mappings = [
+        cuttlefish_mapping:parse({mapping, "listeners.tcp.$name", "rabbit.tcp_listeners", [
+            {datatype, integer},
+            {collect, list}
+        ]})
+    ],
+    Translations = [
+        cuttlefish_translation:parse({translation, "rabbit.tcp_listeners",
+            fun(Conf) ->
+                Settings = cuttlefish_variable:filter_by_prefix("listeners.tcp", Conf),
+                [V * 2 || {_, V} <- Settings]
+            end})
+    ],
+    Conf = [
+        {["listeners", "tcp", "default"], 5672}
+    ],
+    Result = map({Translations, Mappings, []}, Conf),
+    ?assertMatch([{rabbit, [{tcp_listeners, [11344]}]}], Result),
     ok.
 
 -endif.
