@@ -50,7 +50,10 @@ cli_options() ->
  {print_schema, $p, "print",       undefined,          "prints schema mappings on stderr"},
  {max_history,  $m, "max_history", {integer, 3},       "the maximum number of generated config files to keep"},
  {silent,       $t, "silent",      {boolean, false},   "silent operation, no output"},
- {allow_extra,  $x, "allow_extra", {boolean, false},   "don't fail if extra keys not belonging to a schema are found"}
+ {allow_extra,  $x, "allow_extra", {boolean, false},   "don't fail if extra keys not belonging to a schema are found"},
+ {dry_run,      undefined, "dry_run",    {boolean, false},   "preview migration changes without modifying files"},
+ {backup,       undefined, "backup",     {boolean, false},   "create a .bak backup before modifying the conf file"},
+ {output_file,  $o, "output_file",       string,             "write migrated config to this file (migrate command)"}
 ].
 
 %% LOL! I wanted this to be halt 0, but honestly, if this escript does anything
@@ -130,7 +133,9 @@ main(Args) ->
         describe ->
             describe(ParsedArgs, Extra);
         validate ->
-            validate(ParsedArgs)
+            validate(ParsedArgs);
+        migrate ->
+            migrate(ParsedArgs)
     end.
 
 %% This shows the effective configuration, including defaults
@@ -227,6 +232,79 @@ validate_advanced_config(AdvancedConfigFile) ->
                     stop_deactivate()
             end
     end.
+
+%% Migrates alias keys to their canonical names in the conf file.
+migrate(ParsedArgs) ->
+    _ = ?LOG_DEBUG("cuttlefish `migrate`", []),
+    Schema = load_schema(ParsedArgs),
+    {_, Mappings, _} = Schema,
+    ConfFiles = proplists:get_all_values(conf_file, ParsedArgs),
+    case ConfFiles of
+        [] ->
+            _ = ?LOG_ERROR("No conf file specified. Use -c to specify a conf file.", []),
+            stop_deactivate();
+        [ConfFile] ->
+            do_migrate(ConfFile, Mappings, ParsedArgs);
+        _ ->
+            _ = ?LOG_ERROR("Migration supports only a single conf file.", []),
+            stop_deactivate()
+    end.
+
+do_migrate(ConfFile, Mappings, ParsedArgs) ->
+    case cuttlefish_conf_file:load(ConfFile) of
+        {error, Reason} ->
+            _ = ?LOG_ERROR("Error reading ~ts: ~tp", [ConfFile, Reason]),
+            stop_deactivate();
+        {ok, CF} ->
+            AliasMap = cuttlefish_migrate:build_alias_map(Mappings),
+            {MigratedCF, Changes} = cuttlefish_migrate:run(CF, AliasMap),
+            DryRun = proplists:get_value(dry_run, ParsedArgs, false),
+            Backup = proplists:get_value(backup, ParsedArgs, false),
+            OutputFile = proplists:get_value(output_file, ParsedArgs, ConfFile),
+            handle_migration_result(ConfFile, MigratedCF, Changes,
+                                    DryRun, Backup, OutputFile)
+    end.
+
+handle_migration_result(_ConfFile, _CF, [], _DryRun, _Backup, _Output) ->
+    ?STDOUT("No migrations needed.", []),
+    stop_ok();
+handle_migration_result(_ConfFile, _CF, Changes, true, _Backup, _Output) ->
+    _ = [print_migration_change(C) || C <- Changes],
+    ?STDOUT("~b change(s) would be applied.", [length(Changes)]),
+    stop_ok();
+handle_migration_result(ConfFile, CF, Changes, false, Backup, Output) ->
+    _ = maybe_backup(ConfFile, Backup),
+    case cuttlefish_conf_file:save(CF, Output) of
+        ok ->
+            _ = [print_migration_change(C) || C <- Changes],
+            ?STDOUT("~b setting(s) migrated in ~ts.", [length(Changes), Output]),
+            stop_ok();
+        {error, WriteErr} ->
+            _ = ?LOG_ERROR("Error writing ~ts: ~tp", [Output, WriteErr]),
+            stop_deactivate()
+    end.
+
+maybe_backup(_ConfFile, false) -> ok;
+maybe_backup(ConfFile, true) ->
+    BackupFile = ConfFile ++ ".bak",
+    case file:copy(ConfFile, BackupFile) of
+        {ok, _} ->
+            _ = ?LOG_INFO("Backup saved to ~ts", [BackupFile]),
+            ok;
+        {error, CopyErr} ->
+            _ = ?LOG_ERROR("Failed to create backup ~ts: ~tp",
+                           [BackupFile, CopyErr]),
+            stop_deactivate()
+    end.
+
+print_migration_change({rename, Old, New}) ->
+    ?STDOUT("  RENAME  ~ts -> ~ts", [Old, New]);
+print_migration_change({rename, Old, New, OldVal, NewVal}) ->
+    ?STDOUT("  RENAME  ~ts -> ~ts  (value: ~ts -> ~ts)",
+            [Old, New, OldVal, NewVal]);
+print_migration_change({conflict, Alias, Canonical}) ->
+    ?STDOUT("  CONFLICT  ~ts (commented out, ~ts takes precedence)",
+            [Alias, Canonical]).
 
 %% This is the function that dumps the docs for a single setting
 describe(_ParsedArgs, []) ->

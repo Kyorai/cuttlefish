@@ -185,7 +185,15 @@ xlate({collect_on_non_fuzzy, Variable}) ->
                   "in the variable name", [Variable]);
 xlate({collect_multi_wildcard, Variable, N}) ->
     io_lib:format("collect property on mapping ~ts has ~B wildcard segments; "
-                  "only a single wildcard is supported", [Variable, N]).
+                  "only a single wildcard is supported", [Variable, N]);
+xlate({migration_not_a_function, Variable}) ->
+    io_lib:format("Migration for mapping ~ts must be a fun/1", [Variable]);
+xlate({migration_wrong_arity, Variable, Arity}) ->
+    io_lib:format("Migration for mapping ~ts must be a fun/1, got fun/~B",
+                  [Variable, Arity]);
+xlate({migration_fun_error, {Key, Class, Error}}) ->
+    io_lib:format("Migration function for ~ts raised ~tp:~tp",
+                  [Key, Class, Error]).
 
 -spec contains_error(list()) -> boolean().
 contains_error(List) ->
@@ -281,5 +289,13 @@ alias_error_xlate_test() ->
                  lists:flatten(xlate({alias_shadows_canonical, {"c.d", "a.b"}}))),
     ?assertEqual("Alias old.key is claimed by both a.b and c.d",
                  lists:flatten(xlate({alias_claimed_by_multiple_mappings, {"old.key", "a.b", "c.d"}}))).
+
+migration_error_xlate_test() ->
+    ?assertEqual("Migration for mapping a.b must be a fun/1",
+                 lists:flatten(xlate({migration_not_a_function, "a.b"}))),
+    ?assertEqual("Migration for mapping a.b must be a fun/1, got fun/2",
+                 lists:flatten(xlate({migration_wrong_arity, "a.b", 2}))),
+    ?assertMatch("Migration function for old.key raised error:boom",
+                 lists:flatten(xlate({migration_fun_error, {"old.key", error, boom}}))).
 
 -endif.

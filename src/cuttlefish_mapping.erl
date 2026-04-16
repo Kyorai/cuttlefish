@@ -45,7 +45,8 @@
         see = [] :: [cuttlefish_variable:variable()],
         hidden = false :: boolean(),
         aliases = [] :: [{cuttlefish_variable:variable(), string() | undefined}],
-        collect = undefined :: collection_type() | undefined
+        collect = undefined :: collection_type() | undefined,
+        migration = undefined :: fun((string()) -> string()) | undefined
     }).
 
 -type mapping() :: #mapping{}.
@@ -75,7 +76,8 @@
     remove_all_but_first/2,
     aliases/1,
     aliases_with_messages/1,
-    collect/1
+    collect/1,
+    migration/1
     ]).
 
 -spec parse(raw_mapping()) -> mapping() | cuttlefish_error:error().
@@ -102,15 +104,18 @@ parse({mapping, Variable, Mapping, Proplist}) ->
     IsMerge = proplists:is_defined(merge, Proplist),
     AliasesResult = parse_aliases(Variable, VarTokenized, Proplist, IsMerge),
     CollectResult = parse_collect(proplists:get_value(collect, Proplist)),
+    MigrationResult = parse_migration(Variable, proplists:get_value(migration, Proplist)),
 
-    case {Datatype, AliasesResult, CollectResult} of
-        {{error, _}, _, _} ->
+    case {Datatype, AliasesResult, CollectResult, MigrationResult} of
+        {{error, _}, _, _, _} ->
             Datatype;
-        {_, {error, _} = AliasError, _} ->
+        {_, {error, _} = AliasError, _, _} ->
             AliasError;
-        {_, _, {error, _} = CollectError} ->
+        {_, _, {error, _} = CollectError, _} ->
             CollectError;
-        {_, TokenizedAliases, CollectType} ->
+        {_, _, _, {error, _} = MigError} ->
+            MigError;
+        {_, TokenizedAliases, CollectType, Migration} ->
             WildcardCount = length([S || S <- VarTokenized, hd(S) =:= $$]),
             CollectError = case {CollectType, WildcardCount} of
                 {undefined, _}  -> ok;
@@ -136,7 +141,8 @@ parse({mapping, Variable, Mapping, Proplist}) ->
                         validators = proplists:get_value(validators, Proplist, []),
                         hidden = proplists:get_value(hidden, Proplist, false),
                         aliases = TokenizedAliases,
-                        collect = CollectType
+                        collect = CollectType,
+                        migration = Migration
                     }
             end
     end;
@@ -272,7 +278,8 @@ merge(NewMappingSource, OldMapping) ->
                 see = choose(see, NewMappingSource, MergeMapping, OldMapping),
                 hidden = choose(hidden, NewMappingSource, MergeMapping, OldMapping),
                 aliases = choose(aliases, NewMappingSource, MergeMapping, OldMapping),
-                collect = choose(collect, NewMappingSource, MergeMapping, OldMapping)
+                collect = choose(collect, NewMappingSource, MergeMapping, OldMapping),
+                migration = choose(migration, NewMappingSource, MergeMapping, OldMapping)
             }
     end.
 
@@ -353,6 +360,9 @@ aliases_with_messages(M) -> M#mapping.aliases.
 -spec collect(mapping()) -> collection_type() | undefined.
 collect(M) -> M#mapping.collect.
 
+-spec migration(mapping()) -> fun((string()) -> string()) | undefined.
+migration(M) -> M#mapping.migration.
+
 -spec validators(mapping(), [cuttlefish_validator:validator()]) -> [cuttlefish_validator:validator()].
 validators(M, Validators) ->
     lists:foldr(fun(VName, Vs) ->
@@ -380,6 +390,15 @@ remove_all_but_first(MappingName, Mappings) ->
             (M, Acc) ->
                 [M|Acc]
         end, [], Mappings).
+
+-spec parse_migration(string(), term()) -> fun((string()) -> string()) | undefined | cuttlefish_error:error().
+parse_migration(_Variable, undefined) -> undefined;
+parse_migration(_Variable, F) when is_function(F, 1) -> F;
+parse_migration(Variable, F) when is_function(F) ->
+    {arity, Arity} = erlang:fun_info(F, arity),
+    {error, {migration_wrong_arity, Variable, Arity}};
+parse_migration(Variable, _) ->
+    {error, {migration_not_a_function, Variable}}.
 
 -spec parse_collect(term()) -> collection_type() | undefined | cuttlefish_error:error().
 parse_collect(undefined)        -> undefined;
@@ -893,6 +912,46 @@ collect_merge_replaces_test() ->
     NewRaw = {mapping, "p.$n", "app.x", [merge, {collect, {map, atom}}]},
     [Merged] = parse_and_merge(NewRaw, [OldM]),
     ?assertEqual({map, atom}, collect(Merged)).
+
+%% Migration field tests
+
+migration_omitted_test() ->
+    M = parse({mapping, "a.b", "app.x", [{datatype, integer}]}),
+    ?assertEqual(undefined, migration(M)).
+
+migration_parse_test() ->
+    F = fun(V) -> V end,
+    M = parse({mapping, "a.b", "app.x", [{datatype, integer}, {migration, F}]}),
+    ?assertEqual(F, migration(M)).
+
+migration_wrong_arity_test() ->
+    F = fun(_, _) -> ok end,
+    Result = parse({mapping, "a.b", "app.x", [{migration, F}]}),
+    ?assertMatch({error, {migration_wrong_arity, "a.b", 2}}, Result).
+
+migration_not_a_function_test() ->
+    Result = parse({mapping, "a.b", "app.x", [{migration, not_a_fun}]}),
+    ?assertMatch({error, {migration_not_a_function, "a.b"}}, Result).
+
+migration_merge_inherits_test() ->
+    F = fun(V) -> V end,
+    OldM = parse({mapping, "a.b", "app.x", [
+        {default, 1}, {datatype, integer}, {migration, F}
+    ]}),
+    NewRaw = {mapping, "a.b", "app.x", [merge, {default, 2}]},
+    [Merged] = parse_and_merge(NewRaw, [OldM]),
+    ?assertEqual(F, migration(Merged)),
+    ?assertEqual(2, default(Merged)).
+
+migration_merge_replaces_test() ->
+    F1 = fun(V) -> V end,
+    F2 = fun("x") -> "y"; (V) -> V end,
+    OldM = parse({mapping, "a.b", "app.x", [
+        {default, 1}, {datatype, integer}, {migration, F1}
+    ]}),
+    NewRaw = {mapping, "a.b", "app.x", [merge, {migration, F2}]},
+    [Merged] = parse_and_merge(NewRaw, [OldM]),
+    ?assertEqual(F2, migration(Merged)).
 
 aliases_merge_replaces_test() ->
     OldM = parse({mapping, "a.b", "app.x", [
