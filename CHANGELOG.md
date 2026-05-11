@@ -1,6 +1,6 @@
 # Changelog
 
-## [v3.7.0](https://github.com/Kyorai/cuttlefish/tree/v3.7.0) (unreleased)
+## [v3.7.0](https://github.com/Kyorai/cuttlefish/tree/v3.7.0) (2026-05-11)
 
 [Full Changelog](https://github.com/Kyorai/cuttlefish/compare/v3.6.0...v3.7.0)
 
