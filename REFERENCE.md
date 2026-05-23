@@ -332,6 +332,37 @@ plugins = plugin_a, plugin_b, plugin_c
 
 Pass the value through as a string. Semantically indicate that the value is a filesystem path. Erlang type: `string()`.
 
+### `regex`
+
+Validates that the value is a non-empty regular expression. The pattern is compiled at config-load time and probed for excessive backtracking. On success the input string is passed through unchanged. Erlang type: `string()`.
+
+```erlang
+{datatype, regex}
+```
+
+Backtracking detection uses PCRE's `match_limit` against short adversarial probes. It catches the common nested-quantifier and overlapping-alternation patterns — `(a+)+`, `(\w+)+`, `^([a-z]+)+$`, the classic "evil email" regex — that are still pathological in PCRE 8.x. Not covered:
+
+ - Nested quantifiers over rare characters (`(z+)+`); the probes do not begin with those characters
+ - Patterns that only blow up on inputs unlike the probes
+ - Patterns PCRE already short-circuits (`(a*)*`, `(.+)+`); these are accepted because they cannot run away on the consumer either
+
+Treat the datatype as a safety net against accidental pathological patterns in copy-pasted regexes, not as a defense against an adversarial author.
+
+### `uri` and `{uri, Schemes}`
+
+Validates that the value parses as a URI with a recognised scheme and a non-empty host. On success the input string is returned (trimmed of surrounding whitespace). Erlang type: `string()`.
+
+```erlang
+%% accepts both HTTP and HTTPS
+{datatype, uri}
+%% HTTPS only
+{datatype, {uri, [https]}}
+%% an explicitly provided scheme list
+{datatype, {uri, [amqp, amqps]}}
+```
+
+Bare `uri` is equivalent to `{uri, [http, https]}`. `Schemes` is a non-empty list of atoms; the scheme in the input is matched case-insensitively. Userinfo (`https://user:pass@host`), IPv6 literals (`https://[::1]:8080`), ports, paths, and query strings are all accepted. Reachability and DNS are not checked.
+
 ---
 
 ## Translations
