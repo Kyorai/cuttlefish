@@ -185,7 +185,33 @@ xlate({collect_on_non_fuzzy, Variable}) ->
                   "in the variable name", [Variable]);
 xlate({collect_multi_wildcard, Variable, N}) ->
     io_lib:format("collect property on mapping ~ts has ~B wildcard segments; "
-                  "only a single wildcard is supported", [Variable, N]).
+                  "only a single wildcard is supported", [Variable, N]);
+xlate({regex_empty, _}) ->
+    "Regular expression cannot be empty";
+xlate({regex_invalid_syntax, {Value, Reason, Pos}}) ->
+    io_lib:format("~tp is not a valid regular expression (~ts at position ~B)",
+                  [Value, Reason, Pos]);
+xlate({regex_excessive_backtracking, Value}) ->
+    io_lib:format("~tp is prone to excessive backtracking; "
+                  "simplify the pattern or avoid nested or overlapping quantifiers",
+                  [Value]);
+xlate({uri_empty, _}) ->
+    "URI value cannot be empty";
+xlate({uri_malformed, Value}) ->
+    io_lib:format("~tp is not a parseable URI", [Value]);
+xlate({uri_no_scheme, Value}) ->
+    io_lib:format("URI ~tp is missing a scheme (e.g. https://)", [Value]);
+xlate({uri_no_host, Value}) ->
+    io_lib:format("URI ~tp is missing a host", [Value]);
+xlate({uri_bad_scheme, {Value, Got, Allowed}}) ->
+    AllowedList = string:join([atom_to_list(S) || S <- Allowed], ", "),
+    io_lib:format("URI ~tp uses scheme '~ts'; expected one of: ~ts",
+                  [Value, Got, AllowedList]);
+xlate({uri_schemes_empty, _}) ->
+    "URI scheme list cannot be empty";
+xlate({uri_schemes_invalid, Schemes}) ->
+    io_lib:format("URI schemes must be a non-empty list of atoms, got ~tp",
+                  [Schemes]).
 
 -spec contains_error(list()) -> boolean().
 contains_error(List) ->

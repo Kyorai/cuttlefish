@@ -43,6 +43,9 @@
                     {percent, float} |
                     float |
                     tagged_string |
+                    regex |
+                    uri |
+                    {uri, [atom()]} |
                     {list, datatype()}.
 -type extended() :: { integer, integer() } |
                     { string, string() } |
@@ -99,6 +102,10 @@ is_supported({percent, float}) -> true;
 is_supported(float) -> true;
 is_supported(tagged_string) -> true;
 is_supported(tagged_binary) -> true;
+is_supported(regex) -> true;
+is_supported(uri) -> true;
+is_supported({uri, Schemes}) when is_list(Schemes), Schemes =/= [] ->
+    lists:all(fun is_atom/1, Schemes);
 is_supported({list, {list, _}}) ->
     % lists of lists are not supported
     false;
@@ -203,6 +210,11 @@ to_string({Tag, String}, tagged_string) when is_list(Tag), is_list(String) -> Ta
 to_string({Tag, String}, tagged_binary) when is_list(Tag), is_list(String) -> Tag ++ ":" ++ String;
 to_string({Tag, Bin}, tagged_binary) when is_list(Tag), is_binary(Bin) -> Tag ++ ":" ++ binary_to_list(Bin);
 
+to_string(Regex, regex) when is_list(Regex) -> Regex;
+
+to_string(URI, uri) when is_list(URI) -> URI;
+to_string(URI, {uri, _}) when is_list(URI) -> URI;
+
 to_string(File, file) when is_list(File) -> File;
 
 to_string(Directory, directory) when is_list(Directory) -> Directory;
@@ -236,6 +248,21 @@ to_string(Value, MaybeExtendedDatatype) ->
     end.
 
 -define(TAGGED_VALUE_PREFIX_REGEX, <<"^[a-zA-Z0-9_]+\:">>).
+
+-define(DEFAULT_URI_SCHEMES, [http, https]).
+
+%% Match-step backtracking budget used when probing user patterns.
+-define(MATCH_STEP_BUDGET, 1000).
+
+%% Inputs used to probe user patterns for excessive backtracking.
+-define(REGEX_PROBES, [
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa!",
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "abababababababababababababababababababab!",
+    "1111111111111111111111111111111111111111!",
+    "abcdefghijklmnopqrstuvwxyz0123456789ABCD!",
+    "aaaa.aaaa.aaaa.aaaa.aaaaaaaaaaaaaaaaaaaa!"
+]).
 
 -spec from_string(term(), datatype()) -> term() | cuttlefish_error:error().
 from_string(Atom, atom) when is_atom(Atom) -> Atom;
@@ -315,6 +342,14 @@ from_string(Bytesize, bytesize) when is_integer(Bytesize) -> Bytesize;
 from_string(Bytesize, bytesize) when is_list(Bytesize) -> cuttlefish_bytesize:parse(Bytesize);
 
 from_string(String, string) when is_list(String) -> String;
+
+from_string(String, regex) when is_list(String) ->
+    validate_regex(String);
+
+from_string(String, uri) when is_list(String) ->
+    validate_uri(String, ?DEFAULT_URI_SCHEMES);
+from_string(String, {uri, Schemes}) when is_list(String), is_list(Schemes) ->
+    validate_uri(String, Schemes);
 
 from_string(File, file) when is_list(File) -> File;
 
@@ -448,6 +483,93 @@ from_string_to_uds(String, {UDSPlusColon, PortString}) ->
             uds_conversions(String, UDS, validate_uds(UDS));
         _OtherPort ->
             {error, {conversion, {String, 'UDS'}}}
+    end.
+
+validate_regex("") ->
+    {error, {regex_empty, ""}};
+validate_regex(String) when is_list(String) ->
+    case re:compile(String) of
+        {error, {Reason, Pos}} ->
+            {error, {regex_invalid_syntax, {String, Reason, Pos}}};
+        {ok, MP} ->
+            %% `report_errors' is required: without it, PCRE silently turns
+            %% a match_limit exhaustion into `nomatch'.
+            Opts = [{match_limit, ?MATCH_STEP_BUDGET},
+                    {match_limit_recursion, ?MATCH_STEP_BUDGET},
+                    report_errors],
+            case probe_backtracking(String, MP, Opts) of
+                ok    -> String;
+                over_budget -> {error, {regex_excessive_backtracking, String}}
+            end
+    end.
+
+probe_backtracking(String, MP, Opts) ->
+    case probe_all(MP, ?REGEX_PROBES, Opts) of
+        over_budget -> over_budget;
+        ok    -> probe_anchored(String, Opts)
+    end.
+
+probe_anchored(String, Opts) ->
+    case re:compile("^(?:" ++ String ++ ")$") of
+        %% Rare patterns (e.g. PCRE verbs that don't compose with grouping)
+        %% can fail to compile when wrapped. Fall back to the plain probe.
+        {error, _} ->
+            ok;
+        {ok, Anchored} ->
+            probe_all(Anchored, ?REGEX_PROBES, Opts)
+    end.
+
+probe_all(_MP, [], _Opts) -> ok;
+probe_all(MP, [Probe | Rest], Opts) ->
+    case re:run(Probe, MP, Opts) of
+        {error, match_limit}           -> over_budget;
+        {error, match_limit_recursion} -> over_budget;
+        _                              -> probe_all(MP, Rest, Opts)
+    end.
+
+validate_uri(String, Schemes) ->
+    case validate_uri_schemes(Schemes) of
+        ok    -> do_validate_uri(string:trim(String), Schemes);
+        Error -> Error
+    end.
+
+do_validate_uri("", _Schemes) ->
+    {error, {uri_empty, ""}};
+do_validate_uri(String, Schemes) ->
+    case uri_string:parse(String) of
+        {error, _Reason, _Term} ->
+            {error, {uri_malformed, String}};
+        Parsed when is_map(Parsed) ->
+            check_scheme_and_host(String, Parsed, Schemes)
+    end.
+
+check_scheme_and_host(String, Parsed, Schemes) ->
+    case maps:find(scheme, Parsed) of
+        error ->
+            {error, {uri_no_scheme, String}};
+        {ok, SchemeStr} ->
+            Lower = string:lowercase(SchemeStr),
+            Allowed = [atom_to_list(S) || S <- Schemes],
+            case lists:member(Lower, Allowed) of
+                false ->
+                    {error, {uri_bad_scheme, {String, Lower, Schemes}}};
+                true ->
+                    check_host(String, Parsed)
+            end
+    end.
+
+check_host(String, Parsed) ->
+    case maps:get(host, Parsed, "") of
+        "" -> {error, {uri_no_host, String}};
+        _  -> String
+    end.
+
+validate_uri_schemes([]) ->
+    {error, {uri_schemes_empty, []}};
+validate_uri_schemes(Schemes) when is_list(Schemes) ->
+    case lists:all(fun is_atom/1, Schemes) of
+        true -> ok;
+        _    -> {error, {uri_schemes_invalid, Schemes}}
     end.
 
 -ifdef(TEST).

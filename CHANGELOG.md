@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+**Enhancements:**
+
+ - A new datatype, `uri`, `{uri, [Scheme]}`, validates that the value is a parseable URI with an allowed scheme and a non-empty host
+ - A new datatype, `regex`, validates that the value is a valid regular expression not prone to the most common excessive backtracking scenarios
+
 ## [v3.7.0](https://github.com/Kyorai/cuttlefish/tree/v3.7.0) (2026-05-11)
 
 [Full Changelog](https://github.com/Kyorai/cuttlefish/compare/v3.6.0...v3.7.0)
