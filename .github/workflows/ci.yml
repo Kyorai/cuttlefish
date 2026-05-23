@@ -19,6 +19,14 @@ jobs:
       LATEST_OTP_RELEASE: 28
     steps:
       - uses: actions/checkout@v5
+      # GitHub's windows-latest reports ImageOS=win25-vs2026 (same Windows
+      # Server 2025 base, different Visual Studio edition), which setup-beam
+      # does not yet map. Pin to the closest supported label.
+      # Remove once https://github.com/erlef/setup-beam/pull/461 ships.
+      - name: Set ImageOS for Windows
+        if: runner.os == 'Windows'
+        shell: bash
+        run: echo "ImageOS=win25" >> $GITHUB_ENV
       - uses: erlef/setup-beam@fc68ffb90438ef2936bbb3251622353b3dcb2f93 # v1.24.0
         id: install-erlang
         with:
