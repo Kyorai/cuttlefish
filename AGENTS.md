@@ -217,8 +217,13 @@ Merges an `advanced.config` proplist on top of a generated config. Simple
 ### `cuttlefish_datatypes`
 
 String-to-typed-value conversion. Supports: `integer`, `string`, `atom`,
-`float`, `bytesize`, `duration`, `ip`, `fqdn`, `flag`, `{enum, [...]}`,
-`tagged_string`, `tagged_binary`, `{list, T}`, etc.
+`boolean`, `float`, `bytesize`, `duration`, `ip`, `fqdn`, `flag`,
+`{enum, [...]}`, `tagged_string`, `tagged_binary`, `{list, T}`, etc.
+
+`boolean` accepts the atoms `true` or `false` and the strings `"true"` or
+`"false"` (case-sensitive). It replaces `{enum, [true, false]}`, which is
+heavily duplicated across plugin schemas. Use `flag` for settings written
+as on/off in the conf file.
 
 `from_string/2` is the main entry point. Returns `{error, {conversion, ...}}`
 on failure.
