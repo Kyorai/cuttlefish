@@ -915,12 +915,8 @@ unique_tmp_dir(Prefix) ->
     Path.
 
 unique_tmp_path(Prefix, Suffix) ->
-    Base = case os:getenv("TMPDIR") of
-               false -> "/tmp";
-               T -> T
-           end,
     Unique = integer_to_list(erlang:unique_integer([positive])),
-    filename:join(Base, Prefix ++ Unique ++ Suffix).
+    filename:join(cuttlefish_paths:tmp_base(), Prefix ++ Unique ++ Suffix).
 
 cleanup_dir(Dir) ->
     case file:list_dir(Dir) of

@@ -126,12 +126,8 @@ is_safe_name(N) ->
     N =/= "." andalso N =/= ".." andalso not lists:member($/, N).
 
 tmp_dir(Prefix) ->
-    Base = case os:getenv("TMPDIR") of
-               false -> "/tmp";
-               T -> T
-           end,
     Unique = integer_to_list(erlang:unique_integer([positive])),
-    Dir = filename:join(Base, Prefix ++ Unique),
+    Dir = filename:join(cuttlefish_paths:tmp_base(), Prefix ++ Unique),
     ok = file:make_dir(Dir),
     Dir.
 

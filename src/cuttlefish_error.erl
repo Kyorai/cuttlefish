@@ -373,7 +373,8 @@ schema_file_invalid_unicode_xlate_test() ->
 %% Re-register `standard_error' to a temp file so we can verify
 %% `print/1' reaches it without a logger handler.
 print_writes_to_standard_error_test() ->
-    StderrFile = filename:join(tmp_base(), "cuttlefish_print_stderr.txt"),
+    StderrFile = filename:join(cuttlefish_paths:tmp_base(),
+                               "cuttlefish_print_stderr.txt"),
     {ok, F} = file:open(StderrFile, [write]),
     OldStderr = whereis(standard_error),
     true = unregister(standard_error),
@@ -389,11 +390,5 @@ print_writes_to_standard_error_test() ->
     file:delete(StderrFile),
     ?assert(binary:match(Bytes, <<"hello from stderr">>) =/= nomatch),
     ok.
-
-tmp_base() ->
-    case os:getenv("TMPDIR") of
-        false -> "/tmp";
-        T -> T
-    end.
 
 -endif.
