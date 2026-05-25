@@ -4,6 +4,8 @@
 
 **Enhancements:**
 
+ - A new datatype, `boolean`, accepts the atoms `true` or `false` and the strings `"true"` or `"false"`. 
+   It seek to replace the very common `{enum, [true, false]}` pattern
  - A new datatype, `uri`, `{uri, [Scheme]}`, validates that the value is a parseable URI with an allowed scheme and a non-empty host
  - A new datatype, `regex`, validates that the value is a valid regular expression not prone to the most common excessive backtracking scenarios
 

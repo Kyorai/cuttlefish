@@ -28,6 +28,7 @@
 -type datatype() :: integer |
                     string |
                     atom |
+                    boolean |
                     file |
                     directory |
                     flag |
@@ -85,6 +86,7 @@ is_supported(flag) -> true;
 is_supported({flag, On, Off}) when is_atom(On), is_atom(Off) -> true;
 is_supported({flag, {On, _}, {Off, _}}) when is_atom(On), is_atom(Off) -> true;
 is_supported(atom) -> true;
+is_supported(boolean) -> true;
 is_supported({enum, E}) when is_list(E) -> true;
 is_supported(ip) -> true;
 is_supported(fqdn) -> true;
@@ -180,6 +182,11 @@ is_valid_list(List) ->
 to_string(Atom, atom) when is_list(Atom) -> Atom;
 to_string(Atom, atom) when is_atom(Atom) -> atom_to_list(Atom);
 
+to_string(true, boolean) -> "true";
+to_string(false, boolean) -> "false";
+to_string("true", boolean) -> "true";
+to_string("false", boolean) -> "false";
+
 to_string(Integer, integer) when is_integer(Integer) -> integer_to_list(Integer);
 to_string(Integer, integer) when is_list(Integer) -> Integer;
 
@@ -267,6 +274,13 @@ to_string(Value, MaybeExtendedDatatype) ->
 -spec from_string(term(), datatype()) -> term() | cuttlefish_error:error().
 from_string(Atom, atom) when is_atom(Atom) -> Atom;
 from_string(String, atom) when is_list(String) -> list_to_atom(String);
+
+from_string(true, boolean) -> true;
+from_string(false, boolean) -> false;
+from_string("true", boolean) -> true;
+from_string("false", boolean) -> false;
+from_string(Value, boolean) when is_list(Value); is_atom(Value) ->
+    {error, {conversion, {Value, boolean}}};
 
 from_string(String, binary) when is_list(String) -> list_to_binary(String);
 
