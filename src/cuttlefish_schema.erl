@@ -29,10 +29,13 @@
 -export([file/1]).
 -endif.
 
--export([files/1, strings/1]).
+-export([files/1, strings/1, list_schemas/1]).
 
 %% Exported for unit testing in other projects
 -export([merger/1, string_fun_factory/0]).
+
+%% Refuse schema files above 8 MiB.
+-define(MAX_SCHEMA_BYTES, 8388608).
 
 
 -type schema() :: {
@@ -58,34 +61,50 @@ merger(Fun, ListOfInputs) ->
                     schema() | cuttlefish_error:errorlist().
 merger(ListOfFunInputPairs) ->
     Schema = lists:foldr(
-        fun({Fun, Input}, {TranslationAcc, MappingAcc, ValidatorAcc}) ->
-            case Fun(Input, {TranslationAcc, MappingAcc, ValidatorAcc}) of
-                {errorlist, Errors} ->
-                    %% These have already been logged. We're not moving forward with this
-                    %% but, return them anyway so the rebar plugin can display them
-                    {errorlist, Errors};
-                {Translations, Mappings, Validators} ->
-                    NewMappings = lists:foldr(
-                        fun cuttlefish_mapping:replace/2,
-                        MappingAcc,
-                        Mappings),
+        fun
+            %% Propagate an errorlist accumulator instead of
+            %% crashing in the next iteration's 3-tuple match.
+            (_, {errorlist, _} = Errs) ->
+                Errs;
+            ({Fun, Input}, {TranslationAcc, MappingAcc, ValidatorAcc}) ->
+                case Fun(Input, {TranslationAcc, MappingAcc, ValidatorAcc}) of
+                    {errorlist, Errors} ->
+                        {errorlist, Errors};
+                    {Translations, Mappings, Validators} ->
+                        NewMappings = lists:foldr(
+                            fun cuttlefish_mapping:replace/2,
+                            MappingAcc,
+                            Mappings),
 
-                    NewTranslations = lists:foldr(
-                        fun cuttlefish_translation:replace/2,
-                        TranslationAcc,
-                        Translations),
+                        NewTranslations = lists:foldr(
+                            fun cuttlefish_translation:replace/2,
+                            TranslationAcc,
+                            Translations),
 
-                    NewValidators = lists:foldr(
-                        fun cuttlefish_validator:replace/2,
-                        ValidatorAcc,
-                        Validators),
+                        NewValidators = lists:foldr(
+                            fun cuttlefish_validator:replace/2,
+                            ValidatorAcc,
+                            Validators),
 
-                    {NewTranslations, NewMappings, NewValidators}
-            end
+                        {NewTranslations, NewMappings, NewValidators}
+                end
         end,
         {[], [], []},
         ListOfFunInputPairs),
     filter(Schema).
+
+%% @doc Sorted `*.schema' paths in `Dir', dotfiles excluded.
+-spec list_schemas(file:filename_all()) -> [file:filename_all()].
+list_schemas(Dir) ->
+    case file:list_dir(Dir) of
+        {ok, Files} ->
+            [filename:join(Dir, F) ||
+                F <- lists:sort(Files),
+                lists:suffix(".schema", F),
+                not lists:prefix(".", F)];
+        {error, _} ->
+            []
+    end.
 
 %% This filter is *ONLY* for the case of multiple mappings to a single
 %% erlang app setting, *AND* there's no corresponding translation for
@@ -160,21 +179,105 @@ count_mappings(Mappings) ->
 
 -spec file(string(), schema()) -> schema() | cuttlefish_error:errorlist().
 file(Filename, Schema) ->
-    {ok, B, _} = erl_prim_loader:get_file(filename:absname(Filename)),
+    case is_schema_filename(Filename) of
+        false ->
+            wrap_errors(Filename, [{error, {not_a_schema_file, Filename}}]);
+        true ->
+            load_and_parse_schema_file(Filename, Schema)
+    end.
+
+%% Catches `.swp', `.DS_Store', crash dumps, and similar junk.
+-spec is_schema_filename(file:filename_all()) -> boolean().
+is_schema_filename(Filename) ->
+    filename:extension(Filename) =:= ".schema".
+
+load_and_parse_schema_file(Filename, Schema) ->
+    Abs = filename:absname(Filename),
+    case erl_prim_loader:get_file(Abs) of
+        {ok, B, _} ->
+            check_size_and_parse(Filename, B, Schema);
+        error ->
+            wrap_errors(Filename,
+                        [{error, {schema_file_read_error, {Filename, not_readable}}}])
+    end.
+
+check_size_and_parse(Filename, B, Schema) ->
+    case byte_size(B) of
+        Size when Size > ?MAX_SCHEMA_BYTES ->
+            wrap_errors(
+              Filename,
+              [{error, {schema_file_too_large,
+                        {Filename, Size, ?MAX_SCHEMA_BYTES}}}]);
+        _ ->
+            decode_and_parse(Filename, B, Schema)
+    end.
+
+decode_and_parse(Filename, B, Schema) ->
     case unicode:characters_to_list(B) of
-        {incomplete, _List, _RestBin}=Error ->
-            {error, Error};
-        {error, _List, _RestData}=Error ->
-            {error, Error};
-        Chardata when is_list(Chardata)->
+        {incomplete, _, _} ->
+            wrap_errors(Filename,
+                        [{error, {schema_file_invalid_unicode, Filename}}]);
+        {error, _, _} ->
+            wrap_errors(Filename,
+                        [{error, {schema_file_invalid_unicode, Filename}}]);
+        Chardata when is_list(Chardata) ->
+            sanity_check_and_parse(Filename, Chardata, Schema)
+    end.
+
+sanity_check_and_parse(Filename, Chardata, Schema) ->
+    case looks_like_schema(Chardata) of
+        false ->
+            wrap_errors(Filename,
+                        [{error, {schema_file_unrecognized_content, Filename}}]);
+        true ->
             case string(Chardata, Schema) of
                 {errorlist, Errors} ->
                     cuttlefish_error:print("Error parsing schema: ~ts", [Filename]),
-                    {errorlist, Errors};
+                    wrap_errors(Filename, Errors);
                 NewSchema ->
                     NewSchema
             end
     end.
+
+%% True if the first top-level term tag is `mapping', `translation',
+%% or `validator'. Whitespace-and-comments-only files also pass.
+-spec looks_like_schema(string()) -> boolean().
+looks_like_schema(Chardata) ->
+    case skip_whitespace_and_comments(Chardata) of
+        "" ->
+            true;
+        "{" ++ Rest ->
+            has_schema_tag(skip_whitespace_and_comments(Rest));
+        _ ->
+            false
+    end.
+
+has_schema_tag("mapping"     ++ _) -> true;
+has_schema_tag("translation" ++ _) -> true;
+has_schema_tag("validator"   ++ _) -> true;
+has_schema_tag(_) -> false.
+
+skip_whitespace_and_comments([C | T]) when C =:= $\s; C =:= $\t;
+                                           C =:= $\n; C =:= $\r ->
+    skip_whitespace_and_comments(T);
+skip_whitespace_and_comments([$% | T]) ->
+    skip_whitespace_and_comments(skip_to_newline(T));
+skip_whitespace_and_comments(Other) ->
+    Other.
+
+skip_to_newline([])        -> [];
+skip_to_newline([$\n | T]) -> T;
+skip_to_newline([_ | T])   -> skip_to_newline(T).
+
+%% Tag every error with its filename so callers can report which
+%% file failed without relying on a logger.
+-spec wrap_errors(file:filename_all(), [cuttlefish_error:error()]) ->
+    cuttlefish_error:errorlist().
+wrap_errors(Filename, Errors) ->
+    {errorlist, [wrap_error(Filename, E) || E <- Errors]}.
+
+wrap_error(Filename, {error, _} = Inner) ->
+    {error, {schema_file, Filename, Inner}}.
 
 %% @doc this exists so that we can create the fun using non exported
 %% functions for unit testing
@@ -321,6 +424,7 @@ percent_stripper_r(Line) ->
     lists:reverse(
         percent_stripper_l(
             lists:reverse(Line))).
+
 -ifdef(TEST).
 
 -define(XLATE(X), lists:flatten(cuttlefish_error:xlate(X))).
@@ -367,6 +471,8 @@ comment_parser_test() ->
     ok.
 
 bad_file_test() ->
+    %% The inner `erl_scan' error is preserved and wrapped with
+    %% the filename for caller-side reporting.
     _ = cuttlefish_test_logging:set_up(),
     _ = cuttlefish_test_logging:bounce(),
     {errorlist, ErrorList} = file("test/bad_erlang.schema"),
@@ -377,9 +483,10 @@ bad_file_test() ->
     ?assertMatch({match, _}, re:run(L1, "Error scanning erlang near line 10")),
     ?assertMatch({match, _}, re:run(L2, "Error parsing schema: test/bad_erlang.schema")),
 
-    ?assertEqual([
-        {error, {erl_scan, 10}}
-        ], ErrorList),
+    ?assertEqual(
+       [{error, {schema_file, "test/bad_erlang.schema",
+                 {error, {erl_scan, 10}}}}],
+       ErrorList),
     ok.
 
 parse_invalid_erlang_test() ->
@@ -604,5 +711,225 @@ alias_shadows_canonical_across_schema_strings_test() ->
     Schema2 = "{mapping, \"old.key\", \"e.j\", []}.\n",
     Result = strings([Schema1, Schema2]),
     ?assertMatch({errorlist, [{error, {alias_shadows_canonical, {"old.key", "a.b"}}}]}, Result).
+
+%% --- Tests for non-schema-file guards (Recommendations 1-3, 5). ---
+
+merger_does_not_crash_on_first_file_failure_test() ->
+    %% Previously this crashed with `function_clause' on the
+    %% iteration after the first errorlist accumulator.
+    BadFun = fun(_, _) -> {errorlist, [{error, {boom, "first"}}]} end,
+    OkFun = fun(_, {T, M, V}) -> {T, M, V} end,
+    Pairs = [{BadFun, "bad1"}, {OkFun, "good"}, {BadFun, "bad2"}],
+    Result = merger(Pairs),
+    ?assertMatch({errorlist, [_|_]}, Result),
+    {errorlist, Errors} = Result,
+    ?assert(lists:any(
+              fun({error, {boom, _}}) -> true; (_) -> false end,
+              Errors)).
+
+merger_preserves_original_error_after_short_circuit_test() ->
+    BadFun = fun(_, _) -> {errorlist, [{error, {original, sentinel}}]} end,
+    OkFun = fun(_, {T, M, V}) -> {T, M, V} end,
+    Pairs = [{OkFun, "first_good"}, {BadFun, "the_bad_one"}, {OkFun, "last_good"}],
+    {errorlist, Errors} = merger(Pairs),
+    ?assertEqual([{error, {original, sentinel}}], Errors).
+
+merger_with_all_good_inputs_returns_schema_test() ->
+    OkFun = fun(_, {T, M, V}) -> {T, M, V} end,
+    ?assertEqual({[], [], []},
+                 merger([{OkFun, "a"}, {OkFun, "b"}])).
+
+not_a_schema_filename_is_refused_test() ->
+    Result = file("test/binary.schema.bad", {[], [], []}),
+    ?assertMatch({errorlist,
+                  [{error, {schema_file, "test/binary.schema.bad",
+                            {error, {not_a_schema_file, _}}}}]},
+                 Result).
+
+not_a_schema_filename_xlate_is_descriptive_test() ->
+    {errorlist, [{error, Wrapped}]} =
+        file("priv/schema/erl_crash.dump", {[], [], []}),
+    Msg = lists:flatten(cuttlefish_error:xlate(Wrapped)),
+    ?assert(string:find(Msg, "erl_crash.dump") =/= nomatch),
+    ?assert(string:find(Msg, "not a schema file") =/= nomatch),
+    ok.
+
+missing_schema_file_returns_descriptive_error_test() ->
+    Path = unique_tmp_path("missing-", ".schema"),
+    Result = file(Path, {[], [], []}),
+    ?assertMatch({errorlist,
+                  [{error, {schema_file, _,
+                            {error, {schema_file_read_error, {_, not_readable}}}}}]},
+                 Result).
+
+oversized_schema_file_is_refused_test() ->
+    Path = unique_tmp_path("oversize-", ".schema"),
+    Big = binary:copy(<<"x">>, 8388609),
+    ok = file:write_file(Path, Big),
+    try
+        Result = file(Path, {[], [], []}),
+        ?assertMatch(
+           {errorlist,
+            [{error, {schema_file, _,
+                      {error, {schema_file_too_large, {_, 8388609, 8388608}}}}}]},
+           Result)
+    after
+        file:delete(Path)
+    end.
+
+unrecognized_content_is_refused_test() ->
+    Path = unique_tmp_path("garbage-", ".schema"),
+    ok = file:write_file(Path, <<"=erl_crash_dump:0.5\nSomething: not schema\n">>),
+    try
+        Result = file(Path, {[], [], []}),
+        ?assertMatch(
+           {errorlist,
+            [{error, {schema_file, _,
+                      {error, {schema_file_unrecognized_content, _}}}}]},
+           Result)
+    after
+        file:delete(Path)
+    end.
+
+recognises_comments_before_first_tuple_test() ->
+    %% Schemas typically start with copyright comments.
+    Path = unique_tmp_path("commented-", ".schema"),
+    Bytes = <<"%% copyright header\n"
+              "%% more comments\n"
+              "{mapping, \"a.b\", \"app.k\", []}.\n">>,
+    ok = file:write_file(Path, Bytes),
+    try
+        ?assertMatch({_, [_], _}, file(Path, {[], [], []}))
+    after
+        file:delete(Path)
+    end.
+
+recognises_whitespace_between_brace_and_tag_test() ->
+    %% `test/riak.schema' uses `{ translation, ...}' (space after
+    %% the brace).
+    Path = unique_tmp_path("spaced-", ".schema"),
+    Bytes = <<"{\n  \tmapping, \"a.b\", \"app.k\", []}.\n">>,
+    ok = file:write_file(Path, Bytes),
+    try
+        ?assertMatch({_, [_], _}, file(Path, {[], [], []}))
+    after
+        file:delete(Path)
+    end.
+
+content_guard_rejects_non_schema_tuple_test() ->
+    %% A well-formed Erlang tuple with a non-schema tag is still
+    %% refused before reaching `erl_parse'.
+    Path = unique_tmp_path("wrong-tag-", ".schema"),
+    ok = file:write_file(Path, <<"{config, \"value\"}.\n">>),
+    try
+        ?assertMatch({errorlist,
+                      [{error, {schema_file, _,
+                                {error, {schema_file_unrecognized_content, _}}}}]},
+                     file(Path, {[], [], []}))
+    after
+        file:delete(Path)
+    end.
+
+empty_schema_file_is_accepted_test() ->
+    Path = unique_tmp_path("empty-", ".schema"),
+    ok = file:write_file(Path, <<"\n  %% just a comment\n\n">>),
+    try
+        ?assertEqual({[], [], []}, file(Path, {[], [], []}))
+    after
+        file:delete(Path)
+    end.
+
+invalid_unicode_in_schema_file_is_reported_test() ->
+    Path = unique_tmp_path("bad-unicode-", ".schema"),
+    %% Valid schema tuple followed by `0xFF' (never legal in UTF-8).
+    ok = file:write_file(Path, <<"{mapping, \"a\", \"b\", []}.", 16#FF>>),
+    try
+        Result = file(Path, {[], [], []}),
+        ?assertMatch({errorlist,
+                      [{error, {schema_file, _,
+                                {error, {schema_file_invalid_unicode, _}}}}]},
+                     Result)
+    after
+        file:delete(Path)
+    end.
+
+mixed_files_in_files_1_propagate_bad_filename_test() ->
+    Path = unique_tmp_path("bogus-", ".schema"),
+    ok = file:write_file(Path, <<"this is definitely not a schema file\n">>),
+    try
+        {errorlist, Errors} =
+            files(["test/multi1.schema", Path]),
+        ?assert(lists:any(
+                  fun({error, {schema_file, F, _}}) -> F =:= Path;
+                     (_) -> false
+                  end, Errors))
+    after
+        file:delete(Path)
+    end.
+
+list_schemas_returns_sorted_schema_files_only_test() ->
+    Dir = unique_tmp_dir("list-schemas-"),
+    ok = file:write_file(filename:join(Dir, "b.schema"), <<>>),
+    ok = file:write_file(filename:join(Dir, "a.schema"), <<>>),
+    ok = file:write_file(filename:join(Dir, "c.schema"), <<>>),
+    ok = file:write_file(filename:join(Dir, "README.md"), <<>>),
+    ok = file:write_file(filename:join(Dir, "erl_crash.dump"), <<>>),
+    ok = file:write_file(filename:join(Dir, ".hidden.schema"), <<>>),
+    ok = file:write_file(filename:join(Dir, "backup.schema~"), <<>>),
+    try
+        ?assertEqual([filename:join(Dir, "a.schema"),
+                      filename:join(Dir, "b.schema"),
+                      filename:join(Dir, "c.schema")],
+                     list_schemas(Dir))
+    after
+        cleanup_dir(Dir)
+    end.
+
+list_schemas_missing_dir_returns_empty_test() ->
+    Dir = unique_tmp_path("nonexistent-", ""),
+    ?assertEqual([], list_schemas(Dir)).
+
+list_schemas_empty_dir_returns_empty_test() ->
+    Dir = unique_tmp_dir("empty-list-"),
+    try
+        ?assertEqual([], list_schemas(Dir))
+    after
+        cleanup_dir(Dir)
+    end.
+
+list_schemas_ignores_editor_junk_test() ->
+    Dir = unique_tmp_dir("editor-junk-"),
+    ok = file:write_file(filename:join(Dir, "real.schema"), <<>>),
+    ok = file:write_file(filename:join(Dir, ".DS_Store"), <<>>),
+    ok = file:write_file(filename:join(Dir, ".real.schema.swp"), <<>>),
+    try
+        ?assertEqual([filename:join(Dir, "real.schema")], list_schemas(Dir))
+    after
+        cleanup_dir(Dir)
+    end.
+
+%% Unique temporary paths for the filesystem-touching guard tests.
+unique_tmp_dir(Prefix) ->
+    Path = unique_tmp_path(Prefix, ""),
+    ok = file:make_dir(Path),
+    Path.
+
+unique_tmp_path(Prefix, Suffix) ->
+    Base = case os:getenv("TMPDIR") of
+               false -> "/tmp";
+               T -> T
+           end,
+    Unique = integer_to_list(erlang:unique_integer([positive])),
+    filename:join(Base, Prefix ++ Unique ++ Suffix).
+
+cleanup_dir(Dir) ->
+    case file:list_dir(Dir) of
+        {ok, Files} ->
+            lists:foreach(
+              fun(F) -> file:delete(filename:join(Dir, F)) end,
+              Files);
+        _ -> ok
+    end,
+    file:del_dir(Dir).
 
 -endif.

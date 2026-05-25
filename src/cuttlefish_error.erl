@@ -211,7 +211,23 @@ xlate({uri_schemes_empty, _}) ->
     "URI scheme list cannot be empty";
 xlate({uri_schemes_invalid, Schemes}) ->
     io_lib:format("URI schemes must be a non-empty list of atoms, got ~tp",
-                  [Schemes]).
+                  [Schemes]);
+xlate({schema_file, Filename, Inner}) ->
+    ["in schema file \"", Filename, "\": ", xlate(Inner)];
+xlate({not_a_schema_file, Filename}) ->
+    io_lib:format("refused to parse ~ts: not a schema file "
+                  "(expected a .schema extension)", [Filename]);
+xlate({schema_file_too_large, {Filename, Size, Limit}}) ->
+    io_lib:format("refused to parse ~ts: file size ~B bytes exceeds the "
+                  "schema size limit of ~B bytes", [Filename, Size, Limit]);
+xlate({schema_file_unrecognized_content, Filename}) ->
+    io_lib:format("refused to parse ~ts: content does not look like a "
+                  "cuttlefish schema (expected a top-level mapping, "
+                  "translation, or validator tuple)", [Filename]);
+xlate({schema_file_read_error, {Filename, Reason}}) ->
+    io_lib:format("could not read schema file ~ts: ~tp", [Filename, Reason]);
+xlate({schema_file_invalid_unicode, Filename}) ->
+    io_lib:format("schema file ~ts is not valid UTF-8", [Filename]).
 
 -spec contains_error(list()) -> boolean().
 contains_error(List) ->
@@ -243,12 +259,11 @@ print(FormatString, Args) ->
 print({error, ErrorTerm}) ->
     print(lists:flatten(xlate(ErrorTerm)));
 print(String) ->
-    try
-        ?LOG_ERROR("~ts", [String])
-    catch _:_:_ ->
-        io:format("~ts~n", [String]),
-        ok
-    end.
+    %% A logger with no handler silently drops `?LOG_ERROR'; write
+    %% to `standard_error' too so misconfiguration is never silent.
+    io:format(standard_error, "~ts~n", [String]),
+    catch ?LOG_ERROR("~ts", [String]),
+    ok.
 
 -ifdef(TEST).
 
@@ -307,5 +322,78 @@ alias_error_xlate_test() ->
                  lists:flatten(xlate({alias_shadows_canonical, {"c.d", "a.b"}}))),
     ?assertEqual("Alias old.key is claimed by both a.b and c.d",
                  lists:flatten(xlate({alias_claimed_by_multiple_mappings, {"old.key", "a.b", "c.d"}}))).
+
+%% Schema-file error xlate tests for the tags introduced by the
+%% non-schema-file candidates.
+
+schema_file_wrap_xlate_test() ->
+    Inner = {error, {erl_scan, 32230}},
+    ?assertEqual(
+       "in schema file \"/tmp/erl_crash.dump\": "
+       "Error scanning erlang near line 32230",
+       lists:flatten(xlate({schema_file, "/tmp/erl_crash.dump", Inner}))),
+    ok.
+
+not_a_schema_file_xlate_test() ->
+    ?assertEqual(
+       "refused to parse /tmp/erl_crash.dump: not a schema file "
+       "(expected a .schema extension)",
+       lists:flatten(xlate({not_a_schema_file, "/tmp/erl_crash.dump"}))),
+    ok.
+
+schema_file_too_large_xlate_test() ->
+    ?assertEqual(
+       "refused to parse /tmp/big.schema: file size 16777216 bytes "
+       "exceeds the schema size limit of 8388608 bytes",
+       lists:flatten(xlate({schema_file_too_large,
+                            {"/tmp/big.schema", 16777216, 8388608}}))),
+    ok.
+
+schema_file_unrecognized_content_xlate_test() ->
+    ?assertEqual(
+       "refused to parse /tmp/foo.schema: content does not look like a "
+       "cuttlefish schema (expected a top-level mapping, translation, "
+       "or validator tuple)",
+       lists:flatten(xlate({schema_file_unrecognized_content, "/tmp/foo.schema"}))),
+    ok.
+
+schema_file_read_error_xlate_test() ->
+    ?assertEqual(
+       "could not read schema file /missing.schema: not_readable",
+       lists:flatten(xlate({schema_file_read_error,
+                            {"/missing.schema", not_readable}}))),
+    ok.
+
+schema_file_invalid_unicode_xlate_test() ->
+    ?assertEqual(
+       "schema file /tmp/garbage.schema is not valid UTF-8",
+       lists:flatten(xlate({schema_file_invalid_unicode, "/tmp/garbage.schema"}))),
+    ok.
+
+%% Re-register `standard_error' to a temp file so we can verify
+%% `print/1' reaches it without a logger handler.
+print_writes_to_standard_error_test() ->
+    StderrFile = filename:join(tmp_base(), "cuttlefish_print_stderr.txt"),
+    {ok, F} = file:open(StderrFile, [write]),
+    OldStderr = whereis(standard_error),
+    true = unregister(standard_error),
+    true = register(standard_error, F),
+    try
+        print("hello from stderr")
+    after
+        true = unregister(standard_error),
+        true = register(standard_error, OldStderr),
+        file:close(F)
+    end,
+    {ok, Bytes} = file:read_file(StderrFile),
+    file:delete(StderrFile),
+    ?assert(binary:match(Bytes, <<"hello from stderr">>) =/= nomatch),
+    ok.
+
+tmp_base() ->
+    case os:getenv("TMPDIR") of
+        false -> "/tmp";
+        T -> T
+    end.
 
 -endif.
