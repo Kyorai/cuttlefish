@@ -225,8 +225,34 @@ String-to-typed-value conversion. Supports: `integer`, `string`, `atom`,
 heavily duplicated across plugin schemas. Use `flag` for settings written
 as on/off in the conf file.
 
+Numerical types accept range constraints. `{integer, [Constraint, ...]}`
+and `{float, [Constraint, ...]}` check the constraints in declaration
+order; the first failure wins. A constraint is one of `{min, N}`,
+`{max, N}`, `{gt, N}`, `{lt, N}`, or the shortcut atoms `non_negative`
+(`{min, 0}`) and `positive` (`{min, 1}` for integers, `{gt, 0}` for
+floats). A bare shortcut may stand in for the list: `{integer,
+non_negative}`. Three aliases cover common ranges:
+
+- `port` = `{integer, [{min, 0}, {max, 65535}]}` (accepts the full IANA
+  range, including `0` for "OS-assigned" semantics)
+- `byte` = `{integer, [{min, 0}, {max, 255}]}`
+- `percent` = `{percent, integer}` (0-100)
+
+Out-of-range values surface as
+`{error, {range_violation, {Value, FailedConstraint}}}`.
+
+For settings that accept the atom `infinity` in addition to a numeric
+value (the historical `non_negative_integer` validator pattern in
+`rabbit.schema`), compose the new constrained type with the existing
+datatype-list mechanism — first match wins:
+
+```erlang
+{datatype, [{atom, infinity}, {integer, non_negative}]}
+```
+
 `from_string/2` is the main entry point. Returns `{error, {conversion, ...}}`
-on failure.
+on a parse failure and `{error, {range_violation, ...}}` on a constraint
+failure.
 
 ### `cuttlefish_variable`
 
