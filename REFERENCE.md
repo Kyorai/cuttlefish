@@ -10,6 +10,7 @@ This document is the comprehensive reference for schema authors. It covers the s
   - [Fuzzy Variables](#fuzzy-variables)
   - [Aliases](#aliases)
   - [Collections](#collections)
+- [Schema Partials](#schema-partials)
 - [Datatypes](#datatypes)
 - [Translations](#translations)
 - [Validators](#validators)
@@ -167,6 +168,148 @@ After:
 
 ---
 
+## Schema Partials
+
+A partial is a reusable, parameterised block of mappings, validators, and translations that a schema can pull in with a single directive. Partials exist to remove the duplication that arises when many plugin schemas declare the same shape (TLS options, TCP listen options, proxy protocol) with only the conf-key and app-key prefixes differing.
+
+### Including a partial
+
+```erlang
+{include_partial, {rabbit, "ssl_options"},
+    [{prefix,     "auth_http.ssl_options"},
+     {app_prefix, "rabbitmq_auth_backend_http.ssl_options"}]}.
+```
+
+The first element is an `{App, Name}` pair. The loader resolves the partial via `code:priv_dir(App)` — exactly the same mechanism RabbitMQ already uses to discover `.schema` files — so the lookup works identically in dev trees, eunit, escripts, `.ez` plugins, and OS packages, without any new search path or CLI flag.
+
+The partial file lives at `<App>/priv/schema/<Name>.partial`. The distinct extension keeps it out of `cuttlefish_schema:list_schemas/1`'s auto-discovery, so partials are only loaded when a schema explicitly includes them.
+
+Expansion happens at parse time, before the schema merger runs. Partial-produced mappings and translations are indistinguishable from inline ones to every downstream stage (defaults, datatype conversion, validation, translation, conf generation).
+
+### Include arguments
+
+| Argument | Required | Meaning |
+|----------|----------|---------|
+| `{prefix, S}` | yes | Prepended to every mapping's conf key; bound into partial-translation closures as `ConfPrefix`. Must be non-empty. |
+| `{app_prefix, S}` | yes | Prepended to every mapping's and translation's app key; bound as `AppPrefix`. Must be non-empty. |
+| `{exclude, [Name]}` | no | Drops a partial term when `Name` exactly equals a mapping's bare conf key, equals a translation's bare app key, or equals the first dotted segment of a mapping's bare conf key (section match). |
+| `{overrides, [{Name, Opt}]}` | no | For each `{Name, Opt}` pair, applies the option `Opt` (e.g. `{validators, [...]}`, `{default, _}`, `{datatype, _}`) to the partial mapping with that bare conf key, replacing any same-keyed option from the partial. Equivalent in effect to declaring a `[merge, Opt]` mapping with the full prefixed name after the include, but expressed inline at the include site. |
+| `{disable_with, Atom}` | no | Adds a guard mapping and translation that lets the user write `<prefix> = <Atom>` (and nothing else) as a one-line shortcut to disable the entire feature. Any other value is rejected with `cuttlefish:invalid/1`. Removes the per-consumer guard boilerplate (~10 lines per consumer). |
+
+Unknown options are rejected loudly at load time so a typo like `{predix, "..."}` fails immediately instead of silently defaulting. Names listed in `exclude` and `overrides` are also checked against the partial's contents — a misspelling like `{exclude, ["versiosns"]}` or `{overrides, [{"certfle", _}]}` produces a `partial_exclude_unmatched` or `partial_overrides_unmatched` error naming the unmatched entries rather than silently no-opping.
+
+### Partial file contents
+
+A `.partial` file contains three top-level forms:
+
+```erlang
+{mapping, "bare_conf_key", "bare_app_key", [Options]}.
+{validator, "name", "description", fun(Value) -> boolean() end}.
+{partial_translation, "bare_app_key",
+    fun(Conf, ConfPrefix, AppPrefix) -> term() end}.
+```
+
+**Mappings** are written with bare names. The loader prepends the include's `prefix` and `app_prefix`. Fuzzy `$name` segments work normally (they live in the suffix). Most mapping options pass through unchanged. Two are handled specially:
+
+- `{aliases, [...]}` is never prefix-rewritten — aliases are typically legacy absolute keys, not relative siblings.
+- `{see, [...]}` rewrites bare entries (those without a `.`) by prepending the conf prefix; dotted entries pass through as absolute references. All entries are tokenized so downstream code sees a uniform `[variable()]` shape.
+
+**Validators** pass through unchanged. Validator names are global; if the partial references `"pem_file"` but doesn't ship its own definition, the consuming schema (or another schema in the same merge) must provide it.
+
+**Partial translations** are funs of arity 3. The loader wraps each one in a normal `fun(Conf) -> _ end` closure that captures `ConfPrefix` and `AppPrefix`. The downstream pipeline sees a standard translation. Arity 2 or anything else is rejected. Plain `{translation, ...}` is rejected with a message pointing at `partial_translation` — the partial format uses the distinct head atom so a reader of the file knows immediately that the fun receives extra prefix arguments.
+
+**Gotcha — do not hardcode segment counts in partial translations.** A pattern like `[{[_, _, Key], Val} | _]` only matches when the include site happens to use a two-segment conf prefix; deeper or shallower prefixes silently fall through. Derive the trailing segment from the path instead:
+
+```erlang
+{partial_translation, "key",
+    fun(Conf, ConfPrefix, _AppPrefix) ->
+        case cuttlefish_variable:filter_by_prefix(ConfPrefix ++ ".key", Conf) of
+            [{Path, V} | _] when is_list(Path) ->
+                {list_to_atom(lists:last(Path)), list_to_binary(V)};
+            _ ->
+                cuttlefish:unset()
+        end
+    end}.
+```
+
+### Example partial
+
+```erlang
+%% deps/rabbit/priv/schema/ssl_options.partial
+
+{mapping, "verify", "verify",
+    [{datatype, {enum, [verify_peer, verify_none]}},
+     {default, verify_none}]}.
+
+{mapping, "cacertfile", "cacertfile",
+    [{datatype, file},
+     {validators, ["pem_file"]},
+     {see, ["certfile"]}]}.
+
+{mapping, "certfile", "certfile",
+    [{datatype, file},
+     {validators, ["pem_file"]}]}.
+
+{mapping, "versions.$version", "versions",
+    [{datatype, atom}]}.
+
+{partial_translation, "versions",
+    fun(Conf, ConfPrefix, _AppPrefix) ->
+        case cuttlefish_variable:filter_by_prefix(
+                 ConfPrefix ++ ".versions", Conf) of
+            []  -> cuttlefish:unset();
+            Set -> [V || {_, V} <- Set]
+        end
+    end}.
+```
+
+### Overriding partial content
+
+Consumer schemas extend or override a partial using the existing `merge` machinery — no new syntax:
+
+```erlang
+{include_partial, {rabbit, "ssl_options"},
+    [{prefix,     "shovel.ssl"},
+     {app_prefix, "rabbitmq_shovel.ssl"}]}.
+
+%% Override one mapping's datatype:
+{mapping, "shovel.ssl.password", "rabbitmq_shovel.ssl.password",
+    [merge, {datatype, string}]}.
+
+%% Replace one translation:
+{translation, "rabbitmq_shovel.ssl.versions",
+    fun(_Conf) -> custom_value end}.
+
+%% Add a sibling mapping that isn't in the partial:
+{mapping, "shovel.ssl.cacerts.$name", "rabbitmq_shovel.ssl.cacerts",
+    [{datatype, binary}]}.
+```
+
+The merger's last-write-wins rule applies: an inline translation with the same fully-qualified app key as a partial-produced one replaces it.
+
+### Multiple contexts in one schema
+
+A schema can include the same partial multiple times with distinct prefixes — for example, `rabbit.schema` uses this for its four `ssl_options` contexts (primary listener, definitions HTTPS, AMQP 0-9-1 client, AMQP 1.0 client):
+
+```erlang
+{include_partial, {rabbit, "ssl_options"},
+    [{prefix, "ssl_options"}, {app_prefix, "rabbit.ssl_options"}]}.
+{include_partial, {rabbit, "ssl_options"},
+    [{prefix, "definitions.tls"}, {app_prefix, "rabbit.definitions.ssl_options"}]}.
+{include_partial, {rabbit, "ssl_options"},
+    [{prefix, "amqp_client.ssl_options"}, {app_prefix, "amqp_client.ssl_options"}]}.
+```
+
+Key collisions are impossible because every emitted key carries the include-site prefix.
+
+### Restrictions
+
+- Partials cannot include other partials. Nested `include_partial` inside a `.partial` file is rejected at load time.
+- Plain `{translation, ...}` is rejected inside a partial — use `partial_translation` for the prefix-bound form.
+- Unknown top-level head atoms are rejected loudly.
+
+---
+
 ## Datatypes
 
 The `{datatype, T}` option specifies how a conf string value is parsed into an Erlang term. Multiple datatypes can be specified as a list; cuttlefish tries each in order and uses the first that succeeds.
@@ -178,6 +321,29 @@ Parses a decimal integer string. Erlang type: `integer()`.
 ```
 ring_size = 64
 ```
+
+#### Range constraints
+
+`{integer, [Constraint, ...]}` checks constraints in declaration order; the first failure wins. A constraint is one of `{min, N}`, `{max, N}`, `{gt, N}`, `{lt, N}`, or the shortcut atoms `non_negative` (= `{min, 0}`) and `positive` (= `{min, 1}`). A bare shortcut may stand in for the list: `{integer, non_negative}`.
+
+```erlang
+{datatype, {integer, [{min, 1}, {max, 65535}]}}
+{datatype, {integer, non_negative}}
+```
+
+Three named aliases cover common ranges:
+
+- `port` = `{integer, [{min, 0}, {max, 65535}]}` (accepts the full IANA range, including `0` for "OS-assigned" semantics)
+- `byte` = `{integer, [{min, 0}, {max, 255}]}`
+- `percent` = `{percent, integer}` (0-100)
+
+For settings that accept the atom `infinity` in addition to a numeric value, compose with the existing datatype-list mechanism — first match wins:
+
+```erlang
+{datatype, [{atom, infinity}, {integer, non_negative}]}
+```
+
+Out-of-range values surface as `{error, {range_violation, {Value, FailedConstraint}}}`.
 
 ### `string`
 
@@ -210,6 +376,18 @@ Parses a floating-point string. Erlang type: `float()`.
 ```
 threshold = 0.75
 ```
+
+Floats accept the same range constraints as integers (`{min, N}`, `{max, N}`, `{gt, N}`, `{lt, N}`, `non_negative`, `positive`). For floats, `positive` is `{gt, 0}`. See the integer section above.
+
+### `boolean`
+
+Parses `true`/`false`. Erlang type: `boolean()`. Accepts the atoms `true` or `false` and the strings `"true"` or `"false"` (case-sensitive).
+
+```
+metrics.enabled = true
+```
+
+`boolean` replaces `{enum, [true, false]}`, which is heavily duplicated across plugin schemas. Use `flag` instead when the conf file convention is `on`/`off`.
 
 ### `flag`
 

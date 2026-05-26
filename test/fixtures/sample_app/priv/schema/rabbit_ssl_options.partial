@@ -1,0 +1,140 @@
+%% Reusable TLS options block for RabbitMQ plugin schemas.
+%%
+%% Include with:
+%%
+%%   {include_partial, {rabbit, "ssl_options"},
+%%       [{prefix,     "auth_http.ssl_options"},
+%%        {app_prefix, "rabbitmq_auth_backend_http.ssl_options"}]}.
+%%
+%% The partial declares the mappings and bound translations that every
+%% TLS-using plugin needs. Consumers can override individual mappings
+%% with `merge`, replace translations by redeclaring them after the
+%% include, drop unwanted sections with `{exclude, [...]}`, or add
+%% plugin-specific mappings inline. The `pem_file` and `byte`
+%% validators are defined in `rabbit.schema'.
+
+{mapping, "verify", "verify",
+    [{datatype, {enum, [verify_peer, verify_none]}}]}.
+
+{mapping, "fail_if_no_peer_cert", "fail_if_no_peer_cert",
+    [{datatype, boolean}]}.
+
+{mapping, "cacertfile", "cacertfile",
+    [{datatype, string}, {validators, ["pem_file"]}]}.
+
+{mapping, "certfile", "certfile",
+    [{datatype, string}, {validators, ["pem_file"]}]}.
+
+{mapping, "cert", "cert",
+    [{datatype, string}]}.
+
+{partial_translation, "cert",
+    fun(Conf, ConfPrefix, _AppPrefix) ->
+        list_to_binary(cuttlefish:conf_get(ConfPrefix ++ ".cert", Conf))
+    end}.
+
+{mapping, "client_renegotiation", "client_renegotiation",
+    [{datatype, boolean}]}.
+
+{mapping, "honor_cipher_order", "honor_cipher_order",
+    [{datatype, boolean}]}.
+
+{mapping, "honor_ecc_order", "honor_ecc_order",
+    [{datatype, boolean}]}.
+
+%% `sni' and `hostname_verification' are intentionally NOT in this
+%% partial: real consumers use different app-key shapes (e.g.
+%% `rabbitmq_auth_backend_http.ssl_hostname_verification' at the
+%% application root, not under `.ssl_options.'). Consumers that need
+%% them declare their own mapping inline after the include.
+
+{mapping, "log_level", "log_level",
+    [{datatype, {enum, [emergency, alert, critical, error,
+                        warning, notice, info, debug]}}]}.
+
+{mapping, "crl_check", "crl_check",
+    [{datatype, [{enum, [true, false, peer, best_effort]}]}]}.
+
+{mapping, "depth", "depth",
+    [{datatype, integer}, {validators, ["byte"]}]}.
+
+{mapping, "dh", "dh",
+    [{datatype, string}]}.
+
+{partial_translation, "dh",
+    fun(Conf, ConfPrefix, _AppPrefix) ->
+        list_to_binary(cuttlefish:conf_get(ConfPrefix ++ ".dh", Conf))
+    end}.
+
+{mapping, "dhfile", "dhfile",
+    [{datatype, string}, {validators, ["file_accessible"]}]}.
+
+{mapping, "key.RSAPrivateKey", "key",
+    [{datatype, string}]}.
+
+{mapping, "key.DSAPrivateKey", "key",
+    [{datatype, string}]}.
+
+{mapping, "key.PrivateKeyInfo", "key",
+    [{datatype, string}]}.
+
+%% Use `lists:last/1' so the partial works at any prefix depth,
+%% unlike the original rabbit.schema translation which hardcodes a
+%% 2-segment conf prefix via `[_, _, Key]'.
+{partial_translation, "key",
+    fun(Conf, ConfPrefix, _AppPrefix) ->
+        case cuttlefish_variable:filter_by_prefix(ConfPrefix ++ ".key", Conf) of
+            [{Path, Val} | _] when is_list(Path) ->
+                {list_to_atom(lists:last(Path)), list_to_binary(Val)};
+            _ ->
+                cuttlefish:unset()
+        end
+    end}.
+
+{mapping, "keyfile", "keyfile",
+    [{datatype, string}, {validators, ["pem_file"]}]}.
+
+{mapping, "log_alert", "log_alert",
+    [{datatype, boolean}]}.
+
+{mapping, "password", "password",
+    [{datatype, [tagged_binary, binary]}]}.
+
+{partial_translation, "password",
+    fun(Conf, ConfPrefix, _AppPrefix) ->
+        rabbit_cuttlefish:optionally_tagged_binary(
+            ConfPrefix ++ ".password", Conf)
+    end}.
+
+{mapping, "psk_identity", "psk_identity",
+    [{datatype, string}]}.
+
+{mapping, "reuse_sessions", "reuse_sessions",
+    [{datatype, boolean}]}.
+
+{mapping, "secure_renegotiate", "secure_renegotiate",
+    [{datatype, boolean}]}.
+
+{mapping, "versions.$version", "versions",
+    [{datatype, atom}]}.
+
+{partial_translation, "versions",
+    fun(Conf, ConfPrefix, _AppPrefix) ->
+        case cuttlefish_variable:filter_by_prefix(
+                 ConfPrefix ++ ".versions", Conf) of
+            []       -> cuttlefish:unset();
+            Settings -> [V || {_, V} <- Settings]
+        end
+    end}.
+
+{mapping, "ciphers.$cipher", "ciphers",
+    [{datatype, string}]}.
+
+{partial_translation, "ciphers",
+    fun(Conf, ConfPrefix, _AppPrefix) ->
+        case cuttlefish_variable:filter_by_prefix(
+                 ConfPrefix ++ ".ciphers", Conf) of
+            []       -> cuttlefish:unset();
+            Settings -> lists:reverse([V || {_, V} <- Settings])
+        end
+    end}.

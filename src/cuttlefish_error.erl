@@ -174,6 +174,10 @@ xlate({alias_shadows_canonical, {Alias, OwnerMapping}}) ->
 xlate({alias_claimed_by_multiple_mappings, {Alias, Mapping1, Mapping2}}) ->
     io_lib:format("Alias ~ts is claimed by both ~ts and ~ts",
                   [Alias, Mapping1, Mapping2]);
+xlate({validator_not_defined, Variable, ValidatorName}) ->
+    io_lib:format("Mapping ~ts references validator '~ts', but no "
+                  "such validator is defined in any loaded schema",
+                  [Variable, ValidatorName]);
 xlate({unsupported_collect_type, {proplist, binary}}) ->
     "collect type {proplist, binary} is not supported; "
     "use {proplist, atom} for atom keys or {map, binary} for binary keys";
@@ -222,6 +226,74 @@ xlate({range_violation, {Value, {gt, Bound}}}) ->
     io_lib:format("~tp must be strictly greater than ~tp", [Value, Bound]);
 xlate({range_violation, {Value, {lt, Bound}}}) ->
     io_lib:format("~tp must be strictly less than ~tp", [Value, Bound]);
+xlate({partial_app_not_loadable, App, {"no such file or directory", _}}) ->
+    io_lib:format("Could not load OTP application '~ts' to resolve "
+                  "partial: its .app file is not on the code path. "
+                  "Add '~ts' as a dependency, or put its ebin/ on the "
+                  "path with `code:add_pathz/1`", [App, App]);
+xlate({partial_app_not_loadable, App, Reason}) ->
+    io_lib:format("Could not load OTP application '~ts' to resolve "
+                  "partial: ~tp", [App, Reason]);
+xlate({partial_app_no_priv_dir, App}) ->
+    io_lib:format("OTP application '~ts' has no priv dir; cannot "
+                  "resolve partial", [App]);
+xlate({partial_file_not_found, App, Name, Path}) ->
+    io_lib:format("Partial '~ts' not found for app '~ts' at: ~ts",
+                  [Name, App, Path]);
+xlate({partial_file_read_error, App, Name, Path, Reason}) ->
+    io_lib:format("Could not read partial '~ts:~ts' at ~ts: ~tp",
+                  [App, Name, Path, Reason]);
+xlate({partial_file_too_large, {Path, Size, Limit}}) ->
+    io_lib:format("refused to parse partial ~ts: file size ~B bytes exceeds "
+                  "the partial size limit of ~B bytes",
+                  [Path, Size, Limit]);
+xlate({partial_file_invalid_unicode, Path}) ->
+    io_lib:format("partial file ~ts is not valid UTF-8", [Path]);
+xlate({partial_parse_error, App, Name, {erl_scan, Line}}) ->
+    io_lib:format("Error scanning partial '~ts:~ts' near line ~B",
+                  [App, Name, Line]);
+xlate({partial_parse_error, App, Name, {erl_parse, Line, Reason}}) ->
+    io_lib:format("Parse error in partial '~ts:~ts' near line ~B: ~ts",
+                  [App, Name, Line, Reason]);
+xlate({partial_unsupported_term, translation}) ->
+    "Partials may not contain '{translation, ...}' terms; use "
+    "'{partial_translation, Name, fun(Conf, ConfPrefix, AppPrefix) -> _ end}' "
+    "instead, which gets prefix-bound at include time";
+xlate({partial_unsupported_term, Tag}) ->
+    io_lib:format("Partials may not contain '~tp' terms "
+                  "(only mapping, validator, partial_translation)", [Tag]);
+xlate({partial_translation_bad_arity, BareKey, Arity}) ->
+    io_lib:format("Partial translation '~ts' has arity ~B; must be 3 "
+                  "(Conf, ConfPrefix, AppPrefix)", [BareKey, Arity]);
+xlate({partial_missing_prefix, App, Name}) ->
+    io_lib:format("Include of partial '~ts:~ts' is missing the required "
+                  "{prefix, _} argument", [App, Name]);
+xlate({partial_missing_app_prefix, App, Name}) ->
+    io_lib:format("Include of partial '~ts:~ts' is missing the required "
+                  "{app_prefix, _} argument", [App, Name]);
+xlate({partial_empty_prefix, App, Name}) ->
+    io_lib:format("Include of partial '~ts:~ts' has an empty prefix or "
+                  "app_prefix", [App, Name]);
+xlate({partial_unknown_include_opt, Opt}) ->
+    io_lib:format("Unknown include_partial option: ~tp", [Opt]);
+xlate({partial_include_in_partial, App, Name}) ->
+    io_lib:format("Partial '~ts:~ts' contains an include_partial term; "
+                  "partials cannot nest", [App, Name]);
+xlate({partial_exclude_unmatched, App, Name, Unmatched}) ->
+    io_lib:format("Include of partial '~ts:~ts': exclude name(s) "
+                  "do not match any mapping or partial_translation "
+                  "in the partial: ~ts",
+                  [App, Name, format_quoted_names(Unmatched)]);
+xlate({partial_overrides_unmatched, App, Name, Unmatched}) ->
+    io_lib:format("Include of partial '~ts:~ts': overrides name(s) "
+                  "do not match any mapping in the partial: ~ts",
+                  [App, Name, format_quoted_names(Unmatched)]);
+xlate({partial_bad_directive, BadDirective}) ->
+    io_lib:format("Malformed include_partial directive: ~tp; "
+                  "expected '{include_partial, {App, \"name\"}, Opts}' "
+                  "where App is an atom, name is a string, "
+                  "and Opts is a list",
+                  [BadDirective]);
 xlate({schema_file, Filename, Inner}) ->
     ["in schema file \"", Filename, "\": ", xlate(Inner)];
 xlate({not_a_schema_file, Filename}) ->
@@ -238,6 +310,9 @@ xlate({schema_file_read_error, {Filename, Reason}}) ->
     io_lib:format("could not read schema file ~ts: ~tp", [Filename, Reason]);
 xlate({schema_file_invalid_unicode, Filename}) ->
     io_lib:format("schema file ~ts is not valid UTF-8", [Filename]).
+
+format_quoted_names(Names) ->
+    lists:join(", ", [io_lib:format("'~ts'", [N]) || N <- Names]).
 
 -spec contains_error(list()) -> boolean().
 contains_error(List) ->

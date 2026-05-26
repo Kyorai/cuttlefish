@@ -1,0 +1,6 @@
+%% Fixture: nesting is rejected.
+
+{mapping, "verify", "verify", [{datatype, atom}]}.
+
+{include_partial, {sample_app, "example"},
+    [{prefix, "y"}, {app_prefix, "y"}]}.

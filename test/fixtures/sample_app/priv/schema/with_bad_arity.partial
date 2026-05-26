@@ -1,0 +1,6 @@
+%% Fixture: an arity-2 partial translation is rejected.
+
+{mapping, "verify", "verify", [{datatype, atom}]}.
+
+{partial_translation, "versions",
+    fun(_Conf, _ConfPrefix) -> [] end}.

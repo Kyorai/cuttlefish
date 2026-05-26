@@ -121,6 +121,26 @@ the `merge` option in a mapping's proplist.
 | `{include_default, "name"}` | string | |
 | `{see, ["other.key"]}` | list | cross-references |
 
+A schema file may also contain `{include_partial, {App, "name"}, Opts}`
+at the top level — see the **Schema Partials** section below.
+
+## Schema Partials
+
+A partial is a reusable mapping block included into a schema with
+`{include_partial, {App, "name"}, [{prefix, ...}, {app_prefix, ...}]}.`
+The partial file lives at `<App>/priv/schema/<Name>.partial` and is
+resolved via `code:priv_dir(App)`. Expansion happens in
+`cuttlefish_partial:load/3` at parse time; downstream stages see normal
+mappings and translations.
+
+Partial files contain `{mapping, ...}`, `{validator, ...}`, and
+`{partial_translation, BareKey, fun(Conf, ConfPrefix, AppPrefix) ->
+_ end}` terms only. Plain `{translation, ...}` is rejected with a
+helpful error. Partials cannot nest.
+
+See **Schema Partials** in `REFERENCE.md` for the user-facing
+documentation, include arguments, override semantics, and examples.
+
 ## Alias System (added in 3.7.0)
 
 Aliases allow a mapping to accept deprecated conf keys transparently.
@@ -216,43 +236,17 @@ Merges an `advanced.config` proplist on top of a generated config. Simple
 
 ### `cuttlefish_datatypes`
 
-String-to-typed-value conversion. Supports: `integer`, `string`, `atom`,
-`boolean`, `float`, `bytesize`, `duration`, `ip`, `fqdn`, `flag`,
-`{enum, [...]}`, `tagged_string`, `tagged_binary`, `{list, T}`, etc.
+String-to-typed-value conversion. `from_string/2` is the main entry
+point and returns `{error, {conversion, ...}}` on a parse failure or
+`{error, {range_violation, ...}}` on a constraint failure.
 
-`boolean` accepts the atoms `true` or `false` and the strings `"true"` or
-`"false"` (case-sensitive). It replaces `{enum, [true, false]}`, which is
-heavily duplicated across plugin schemas. Use `flag` for settings written
-as on/off in the conf file.
-
-Numerical types accept range constraints. `{integer, [Constraint, ...]}`
-and `{float, [Constraint, ...]}` check the constraints in declaration
-order; the first failure wins. A constraint is one of `{min, N}`,
-`{max, N}`, `{gt, N}`, `{lt, N}`, or the shortcut atoms `non_negative`
-(`{min, 0}`) and `positive` (`{min, 1}` for integers, `{gt, 0}` for
-floats). A bare shortcut may stand in for the list: `{integer,
-non_negative}`. Three aliases cover common ranges:
-
-- `port` = `{integer, [{min, 0}, {max, 65535}]}` (accepts the full IANA
-  range, including `0` for "OS-assigned" semantics)
-- `byte` = `{integer, [{min, 0}, {max, 255}]}`
-- `percent` = `{percent, integer}` (0-100)
-
-Out-of-range values surface as
-`{error, {range_violation, {Value, FailedConstraint}}}`.
-
-For settings that accept the atom `infinity` in addition to a numeric
-value (the historical `non_negative_integer` validator pattern in
-`rabbit.schema`), compose the new constrained type with the existing
-datatype-list mechanism — first match wins:
-
-```erlang
-{datatype, [{atom, infinity}, {integer, non_negative}]}
-```
-
-`from_string/2` is the main entry point. Returns `{error, {conversion, ...}}`
-on a parse failure and `{error, {range_violation, ...}}` on a constraint
-failure.
+See the **Datatypes** section in `REFERENCE.md` for the full list of
+supported types (`integer`, `string`, `binary`, `atom`, `float`,
+`boolean`, `flag`, `{enum, _}`, `ip`, `fqdn`, `bytesize`, durations,
+percent, tagged types, lists, files, regex, URIs), the numerical range
+constraints (`{min, _}`, `{max, _}`, `{gt, _}`, `{lt, _}`,
+`non_negative`, `positive`), and the named aliases (`port`, `byte`,
+`percent`).
 
 ### `cuttlefish_variable`
 

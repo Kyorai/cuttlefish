@@ -1,0 +1,8 @@
+%% Fixture for testing `@doc' and `@see' annotation flow-through.
+
+%% @doc Sets the verify mode.
+%% @doc Multiple lines are joined.
+%% @see certfile
+{mapping, "verify", "verify", [{datatype, atom}]}.
+
+{mapping, "certfile", "certfile", [{datatype, string}]}.

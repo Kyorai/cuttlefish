@@ -1,0 +1,6 @@
+%% Fixture: a plain `translation` form is rejected with the
+%% "use partial_translation instead" error.
+
+{mapping, "verify", "verify", [{datatype, atom}]}.
+
+{translation, "versions", fun(_Conf) -> [] end}.
