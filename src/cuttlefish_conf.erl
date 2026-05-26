@@ -225,13 +225,20 @@ generate_comments(M) ->
 -spec pretty_datatype(cuttlefish_datatypes:datatype() |
                       cuttlefish_datatypes:extended()) -> string().
 pretty_datatype(integer) -> "an integer";
+pretty_datatype(port) -> "an integer in 0-65535 (TCP/UDP port)";
+pretty_datatype(byte) -> "an integer in 0-255";
+pretty_datatype(percent) -> "an integer percent in 0-100, with a trailing '%' on string input";
+pretty_datatype({integer, Constraints}) when is_list(Constraints); is_atom(Constraints) ->
+    "an integer" ++ render_numeric_constraints(Constraints);
+pretty_datatype({float, Constraints}) when is_list(Constraints); is_atom(Constraints) ->
+    "a float" ++ render_numeric_constraints(Constraints);
 pretty_datatype({enum, L}) ->
     "one of: " ++ string:join([ atom_to_list(A) || A <- L], ", ");
 pretty_datatype(ip) -> "an IP/port pair, e.g. 127.0.0.1:10011";
 pretty_datatype(domain_socket) -> "a Unix Domain Socket, e.g. local:/var/run/app.sock:0";
 pretty_datatype({duration, _}) -> "a time duration with units, e.g. '10s' for 10 seconds";
 pretty_datatype(bytesize) -> "a byte size with units, e.g. 10GB";
-pretty_datatype({integer, I}) -> "the integer " ++ integer_to_list(I);
+pretty_datatype({integer, I}) when is_integer(I) -> "the integer " ++ integer_to_list(I);
 pretty_datatype({string, S}) -> "the text \"" ++ S ++ "\"";
 pretty_datatype({tagged_string, {Tag, String}}) -> "the text \"" ++ String ++ "\"" ++ " tagged as \"" ++ Tag ++ "\"";
 pretty_datatype({atom, A}) -> "the text \"" ++ atom_to_list(A) ++ "\"";
@@ -250,6 +257,22 @@ pretty_datatype({flag, On, Off}) when is_atom(On), is_atom(Off) ->
 pretty_datatype({flag, {On,_}, {Off,_}}) ->
     ?FMT("~tp or ~tp", [On, Off]);
 pretty_datatype(_) -> "text". %% string and atom
+
+render_numeric_constraints(non_negative) -> " (non-negative)";
+render_numeric_constraints(positive)     -> " (positive)";
+render_numeric_constraints([])           -> "";
+render_numeric_constraints(Constraints) when is_list(Constraints) ->
+    " (" ++ string:join([render_constraint(C) || C <- Constraints], ", ") ++ ")".
+
+render_constraint(non_negative) -> "non-negative";
+render_constraint(positive)     -> "positive";
+render_constraint({min, N})     -> "min=" ++ format_number(N);
+render_constraint({max, N})     -> "max=" ++ format_number(N);
+render_constraint({gt,  N})     -> ">"    ++ format_number(N);
+render_constraint({lt,  N})     -> "<"    ++ format_number(N).
+
+format_number(N) when is_integer(N) -> integer_to_list(N);
+format_number(N) when is_float(N)   -> float_to_list(N, [{decimals, 6}, compact]).
 
 remove_duplicates(Conf) ->
     lists:foldl(

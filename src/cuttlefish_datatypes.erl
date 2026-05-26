@@ -42,12 +42,25 @@
                     bytesize |
                     {percent, integer} |
                     {percent, float} |
+                    percent |
+                    port |
+                    byte |
+                    {integer, [numeric_constraint()] | numeric_shortcut()} |
+                    {float,   [numeric_constraint()] | numeric_shortcut()} |
                     float |
                     tagged_string |
                     regex |
                     uri |
                     {uri, [atom()]} |
                     {list, datatype()}.
+
+-type numeric_constraint() :: {min, number()}
+                            | {max, number()}
+                            | {gt,  number()}
+                            | {lt,  number()}
+                            | numeric_shortcut().
+
+-type numeric_shortcut() :: non_negative | positive.
 -type extended() :: { integer, integer() } |
                     { string, string() } |
                     { binary, binary() } |
@@ -101,6 +114,13 @@ is_supported({duration, ms}) -> true;
 is_supported(bytesize) -> true;
 is_supported({percent, integer}) -> true;
 is_supported({percent, float}) -> true;
+is_supported(percent) -> true;
+is_supported(port) -> true;
+is_supported(byte) -> true;
+is_supported({integer, Constraints}) ->
+    valid_constraints(Constraints, integer);
+is_supported({float, Constraints}) ->
+    valid_constraints(Constraints, float);
 is_supported(float) -> true;
 is_supported(tagged_string) -> true;
 is_supported(tagged_binary) -> true;
@@ -189,6 +209,14 @@ to_string("false", boolean) -> "false";
 
 to_string(Integer, integer) when is_integer(Integer) -> integer_to_list(Integer);
 to_string(Integer, integer) when is_list(Integer) -> Integer;
+
+to_string(Value, port) -> to_string(Value, integer);
+to_string(Value, byte) -> to_string(Value, integer);
+to_string(Value, percent) -> to_string(Value, {percent, integer});
+to_string(Value, {integer, Constraints}) when is_list(Constraints); is_atom(Constraints) ->
+    to_string(Value, integer);
+to_string(Value, {float, Constraints}) when is_list(Constraints); is_atom(Constraints) ->
+    to_string(Value, float);
 
 to_string({IP, Port}, ip) when is_list(IP), is_integer(Port) -> IP ++ ":" ++ integer_to_list(Port);
 to_string(IPString, ip) when is_list(IPString) -> IPString;
@@ -294,6 +322,21 @@ from_string(String, integer) when is_list(String) ->
     catch
         _:_ -> {error, {conversion, {String, integer}}}
     end;
+
+from_string(Value, port) ->
+    from_string(Value, {integer, [{min, 0}, {max, 65535}]});
+
+from_string(Value, byte) ->
+    from_string(Value, {integer, [{min, 0}, {max, 255}]});
+
+from_string(Value, percent) ->
+    from_string(Value, {percent, integer});
+
+from_string(Value, {integer, Constraints}) ->
+    apply_numeric_constraints(from_string(Value, integer), Constraints, integer);
+
+from_string(Value, {float, Constraints}) ->
+    apply_numeric_constraints(from_string(Value, float), Constraints, float);
 
 from_string({IP, Port}, ip) when is_list(IP), is_integer(Port) -> {IP, Port};
 from_string(String, ip) when is_list(String) ->
@@ -585,6 +628,48 @@ validate_uri_schemes(Schemes) when is_list(Schemes) ->
         true -> ok;
         _    -> {error, {uri_schemes_invalid, Schemes}}
     end.
+
+valid_constraints(non_negative, _BaseType) -> true;
+valid_constraints(positive,     _BaseType) -> true;
+valid_constraints(Constraints, BaseType) when is_list(Constraints) ->
+    lists:all(fun(C) -> valid_constraint(C, BaseType) end, Constraints);
+valid_constraints(_, _) -> false.
+
+valid_constraint(non_negative, _) -> true;
+valid_constraint(positive,     _) -> true;
+valid_constraint({min, N}, T) -> is_bound(N, T);
+valid_constraint({max, N}, T) -> is_bound(N, T);
+valid_constraint({gt,  N}, T) -> is_bound(N, T);
+valid_constraint({lt,  N}, T) -> is_bound(N, T);
+valid_constraint(_, _) -> false.
+
+is_bound(N, integer) -> is_integer(N);
+is_bound(N, float)   -> is_number(N).
+
+apply_numeric_constraints({error, _} = E, _Constraints, _BaseType) ->
+    E;
+apply_numeric_constraints(Value, Constraints, BaseType) ->
+    check_constraints(Value, expand_constraints(Constraints, BaseType)).
+
+expand_constraints(non_negative, integer) -> [{min, 0}];
+expand_constraints(non_negative, float)   -> [{min, +0.0}];
+expand_constraints(positive, integer) -> [{min, 1}];
+expand_constraints(positive, float)   -> [{gt, +0.0}];
+expand_constraints(Constraints, BaseType) when is_list(Constraints) ->
+    lists:flatmap(fun(C) -> expand_constraints(C, BaseType) end, Constraints);
+expand_constraints(C, _BaseType) -> [C].
+
+check_constraints(Value, []) -> Value;
+check_constraints(Value, [Constraint | Rest]) ->
+    case satisfies(Value, Constraint) of
+        true  -> check_constraints(Value, Rest);
+        false -> {error, {range_violation, {Value, Constraint}}}
+    end.
+
+satisfies(V, {min, N}) -> V >= N;
+satisfies(V, {max, N}) -> V =< N;
+satisfies(V, {gt,  N}) -> V >  N;
+satisfies(V, {lt,  N}) -> V <  N.
 
 -ifdef(TEST).
 

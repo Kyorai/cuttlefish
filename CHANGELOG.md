@@ -4,10 +4,14 @@
 
 **Enhancements:**
 
- - A new datatype, `boolean`, accepts the atoms `true` or `false` and the strings `"true"` or `"false"`. 
-   It seek to replace the very common `{enum, [true, false]}` pattern
- - A new datatype, `uri`, `{uri, [Scheme]}`, validates that the value is a parseable URI with an allowed scheme and a non-empty host
- - A new datatype, `regex`, validates that the value is a valid regular expression not prone to the most common excessive backtracking scenarios
+ - New datatype `boolean`: accepts `true`/`false` (atom or string). Replaces the common `{enum, [true, false]}`
+ - New datatype `regex`: validates a regex and rejects patterns prone to excessive backtracking
+ - New datatype `uri` (and `{uri, [Scheme]}`): validates a parseable URI with an allowed scheme and a non-empty host
+ - Range constraints on `integer`: `{integer, [{min, N}, {max, N}, {gt, N}, {lt, N}]}`, plus shortcut atoms `non_negative` and `positive`
+ - Range constraints on `float`: `{float, [{min, N}, {max, N}, {gt, N}, {lt, N}]}`, plus shortcut atoms `non_negative` and `positive`
+ - New datatype alias `port` for `{integer, [{min, 0}, {max, 65535}]}`
+ - New datatype alias `byte` for `{integer, [{min, 0}, {max, 255}]}`
+ - New datatype alias `percent` for `{percent, integer}` (0-100)
 
 ## [v3.7.0](https://github.com/Kyorai/cuttlefish/tree/v3.7.0) (2026-05-11)
 

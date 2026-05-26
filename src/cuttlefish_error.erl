@@ -212,6 +212,16 @@ xlate({uri_schemes_empty, _}) ->
 xlate({uri_schemes_invalid, Schemes}) ->
     io_lib:format("URI schemes must be a non-empty list of atoms, got ~tp",
                   [Schemes]);
+xlate({range_violation, {Value, {min, Bound}}}) ->
+    io_lib:format("~tp is below the minimum allowed value of ~tp",
+                  [Value, Bound]);
+xlate({range_violation, {Value, {max, Bound}}}) ->
+    io_lib:format("~tp exceeds the maximum allowed value of ~tp",
+                  [Value, Bound]);
+xlate({range_violation, {Value, {gt, Bound}}}) ->
+    io_lib:format("~tp must be strictly greater than ~tp", [Value, Bound]);
+xlate({range_violation, {Value, {lt, Bound}}}) ->
+    io_lib:format("~tp must be strictly less than ~tp", [Value, Bound]);
 xlate({schema_file, Filename, Inner}) ->
     ["in schema file \"", Filename, "\": ", xlate(Inner)];
 xlate({not_a_schema_file, Filename}) ->
