@@ -1,0 +1,47 @@
+%% Mimic of rabbit.schema's tcp_listen_options.* block (the one shared
+%% by rabbit/mqtt/stomp/stream). Used by the cuttlefish-side fidelity
+%% test to exercise the partial mechanism against a real-world TCP
+%% socket-options shape without requiring a RabbitMQ checkout.
+
+{validator, "port", "must be in range 0..65535",
+    fun(N) -> is_integer(N) andalso N >= 0 andalso N =< 65535 end}.
+
+{validator, "non_negative_integer", "must be >= 0",
+    fun(N) -> is_integer(N) andalso N >= 0 end}.
+
+{mapping, "backlog", "backlog",             [{datatype, integer}]}.
+{mapping, "nodelay", "nodelay",             [{datatype, boolean}]}.
+{mapping, "buffer",  "buffer",              [{datatype, integer}]}.
+{mapping, "delay_send", "delay_send",       [{datatype, boolean}]}.
+{mapping, "dontroute", "dontroute",         [{datatype, boolean}]}.
+{mapping, "exit_on_close", "exit_on_close", [{datatype, boolean}]}.
+{mapping, "fd", "fd",                       [{datatype, integer}]}.
+{mapping, "high_msgq_watermark", "high_msgq_watermark",
+    [{datatype, integer}]}.
+{mapping, "high_watermark", "high_watermark", [{datatype, integer}]}.
+{mapping, "keepalive", "keepalive",         [{datatype, boolean}]}.
+{mapping, "low_msgq_watermark", "low_msgq_watermark",
+    [{datatype, integer}]}.
+{mapping, "low_watermark", "low_watermark", [{datatype, integer}]}.
+{mapping, "port", "port",
+    [{datatype, integer}, {validators, ["port"]}]}.
+{mapping, "priority", "priority",           [{datatype, integer}]}.
+{mapping, "recbuf", "recbuf",               [{datatype, integer}]}.
+{mapping, "send_timeout", "send_timeout",   [{datatype, integer}]}.
+{mapping, "send_timeout_close", "send_timeout_close",
+    [{datatype, boolean}]}.
+{mapping, "sndbuf", "sndbuf",               [{datatype, integer}]}.
+{mapping, "tos", "tos",                     [{datatype, integer}]}.
+
+%% Two mappings that target the same app key, aggregated by the
+%% translation into Erlang's `{Bool, Timeout}' linger tuple.
+{mapping, "linger.on", "linger",            [{datatype, boolean}]}.
+{mapping, "linger.timeout", "linger",
+    [{datatype, integer}, {validators, ["non_negative_integer"]}]}.
+
+{partial_translation, "linger",
+    fun(Conf, ConfPrefix, _AppPrefix) ->
+        On      = cuttlefish:conf_get(ConfPrefix ++ ".linger.on", Conf, false),
+        Timeout = cuttlefish:conf_get(ConfPrefix ++ ".linger.timeout", Conf, 0),
+        {On, Timeout}
+    end}.

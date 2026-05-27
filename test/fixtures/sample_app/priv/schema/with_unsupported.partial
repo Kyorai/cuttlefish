@@ -1,0 +1,3 @@
+%% Fixture: a non-mapping/validator/partial_translation tuple is rejected.
+
+{config, "value"}.

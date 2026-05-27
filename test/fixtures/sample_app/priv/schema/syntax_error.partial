@@ -1,0 +1,5 @@
+%% Fixture: deliberately malformed Erlang.
+
+{mapping, "verify", "verify", [
+    {datatype, atom},
+}.

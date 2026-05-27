@@ -129,9 +129,37 @@ filter({Translations, Mappings, Validators}) ->
 
     case validate_aliases(NewMappings) of
         ok ->
-            {Translations, NewMappings, Validators};
+            case validate_validator_refs(NewMappings, Validators) of
+                ok -> {Translations, NewMappings, Validators};
+                {errorlist, _} = Errors -> Errors
+            end;
         {errorlist, _} = Errors ->
             Errors
+    end.
+
+%% @doc Checks that every validator name referenced by a mapping's
+%% `{validators, [...]}` opt resolves to a defined validator.
+%% Without this, a typo or missing dependency only surfaces at
+%% validation phase as `validator_not_found', far from the actual
+%% cause.
+-spec validate_validator_refs([cuttlefish_mapping:mapping()],
+                              [cuttlefish_validator:validator()]) ->
+    ok | cuttlefish_error:errorlist().
+validate_validator_refs(Mappings, Validators) ->
+    Defined = sets:from_list(
+        [cuttlefish_validator:name(V) || V <- Validators]),
+    Missing = lists:flatmap(
+        fun(M) ->
+            Var = cuttlefish_variable:format(cuttlefish_mapping:variable(M)),
+            [{Var, N} || N <- cuttlefish_mapping:validators(M),
+                         not sets:is_element(N, Defined)]
+        end, Mappings),
+    case Missing of
+        [] -> ok;
+        _ ->
+            {errorlist,
+             [{error, {validator_not_defined, Var, N}}
+              || {Var, N} <- Missing]}
     end.
 
 %% @doc Validates that aliases don't collide with other mappings' canonical
@@ -252,9 +280,10 @@ looks_like_schema(Chardata) ->
             false
     end.
 
-has_schema_tag("mapping"     ++ _) -> true;
-has_schema_tag("translation" ++ _) -> true;
-has_schema_tag("validator"   ++ _) -> true;
+has_schema_tag("mapping"         ++ _) -> true;
+has_schema_tag("translation"     ++ _) -> true;
+has_schema_tag("validator"       ++ _) -> true;
+has_schema_tag("include_partial" ++ _) -> true;
 has_schema_tag(_) -> false.
 
 skip_whitespace_and_comments([C | T]) when C =:= $\s; C =:= $\t;
@@ -349,10 +378,48 @@ parse_schema(ScannedTokens, CommentTokens, {TAcc, MAcc, VAcc, EAcc}) ->
             {cuttlefish_translation:parse_and_merge(Return, TAcc), MAcc, VAcc, EAcc};
         {validator, Return} ->
             {TAcc, MAcc, cuttlefish_validator:parse_and_merge(Return, VAcc), EAcc};
+        {include_partial, {include_partial, {App, Name}, IncludeOpts}}
+                when is_atom(App), is_list(Name), is_list(IncludeOpts) ->
+            apply_partial(App, Name, IncludeOpts, {TAcc, MAcc, VAcc, EAcc});
+        {include_partial, BadDirective} ->
+            {TAcc, MAcc, VAcc,
+             [{error, {partial_bad_directive, BadDirective}} | EAcc]};
         Other ->
             {TAcc, MAcc, VAcc, [{error, {parse_schema, Other}} | EAcc]}
     end,
     parse_schema(TailTokens, TailComments, NewAcc).
+
+%% Load a partial and fold each rewritten term into the schema
+%% accumulators. Errors from the loader propagate as standard
+%% schema errors and don't abort the rest of the file.
+apply_partial(App, Name, IncludeOpts, Acc) ->
+    case cuttlefish_partial:load(App, Name, IncludeOpts) of
+        {ok, Terms} ->
+            Annotated = [annotate_partial_source(T, App, Name) || T <- Terms],
+            lists:foldl(fun apply_partial_term/2, Acc, Annotated);
+        {error, Reason} ->
+            {T, M, V, E} = Acc,
+            {T, M, V, [{error, Reason} | E]}
+    end.
+
+%% Prepend a provenance line to each partial-emitted mapping's doc
+%% so `cuttlefish describe' shows where it came from. Translations
+%% and validators have no doc field; pass them through.
+annotate_partial_source({mapping, Var, Map, Opts}, App, Name) ->
+    Provenance = lists:flatten(
+        io_lib:format("(from partial ~ts:~ts)", [App, Name])),
+    OldDoc = proplists:get_value(doc, Opts, []),
+    NewOpts = lists:keystore(doc, 1, Opts, {doc, [Provenance | OldDoc]}),
+    {mapping, Var, Map, NewOpts};
+annotate_partial_source(Other, _App, _Name) ->
+    Other.
+
+apply_partial_term({mapping, _, _, _} = Raw, {T, M, V, E}) ->
+    {T, cuttlefish_mapping:parse_and_merge(Raw, M), V, E};
+apply_partial_term({validator, _, _, _} = Raw, {T, M, V, E}) ->
+    {T, M, cuttlefish_validator:parse_and_merge(Raw, V), E};
+apply_partial_term({translation, _, _} = Raw, {T, M, V, E}) ->
+    {cuttlefish_translation:parse_and_merge(Raw, T), M, V, E}.
 
 parse_schema_tokens(Scanned) ->
     parse_schema_tokens(Scanned, []).
@@ -366,7 +433,9 @@ parse_schema_tokens(Scanned, Acc=[{dot, LineNo}|_]) ->
 parse_schema_tokens([H|Scanned], Acc) ->
     parse_schema_tokens(Scanned, [H|Acc]).
 
--spec parse(list()) -> { mapping | translation | validator, tuple()} | cuttlefish_error:error().
+-spec parse(list()) ->
+    {mapping | translation | validator | include_partial, tuple()}
+  | cuttlefish_error:error().
 parse(Scanned) ->
     case erl_parse:parse_exprs(Scanned) of
         {ok, Parsed} ->

@@ -1,0 +1,30 @@
+%% Fixture: a small but representative partial.
+%%
+%% Include with, e.g.:
+%%
+%%   {include_partial, {sample_app, "example"},
+%%       [{prefix,     "x.ssl_options"},
+%%        {app_prefix, "x_app.ssl_options"}]}.
+
+{mapping, "verify", "verify",
+    [{datatype, {enum, [verify_peer, verify_none]}},
+     {default, verify_none}]}.
+
+{mapping, "cacertfile", "cacertfile",
+    [{datatype, string},
+     {see, ["certfile"]}]}.
+
+{mapping, "certfile", "certfile",
+    [{datatype, string}]}.
+
+{mapping, "versions.$version", "versions",
+    [{datatype, atom}]}.
+
+{partial_translation, "versions",
+    fun(Conf, ConfPrefix, _AppPrefix) ->
+        case cuttlefish_variable:filter_by_prefix(
+                ConfPrefix ++ ".versions", Conf) of
+            []  -> cuttlefish:unset();
+            Set -> [V || {_, V} <- Set]
+        end
+    end}.
