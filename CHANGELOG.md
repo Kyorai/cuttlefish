@@ -4,14 +4,24 @@
 
 **Enhancements:**
 
- - New datatype `boolean`: accepts `true`/`false` (atom or string). Replaces the common `{enum, [true, false]}`
- - New datatype `regex`: validates a regex and rejects patterns prone to excessive backtracking
- - New datatype `uri` (and `{uri, [Scheme]}`): validates a parseable URI with an allowed scheme and a non-empty host
- - Range constraints on `integer`: `{integer, [{min, N}, {max, N}, {gt, N}, {lt, N}]}`, plus shortcut atoms `non_negative` and `positive`
- - Range constraints on `float`: `{float, [{min, N}, {max, N}, {gt, N}, {lt, N}]}`, plus shortcut atoms `non_negative` and `positive`
- - New datatype alias `port` for `{integer, [{min, 0}, {max, 65535}]}`
- - New datatype alias `byte` for `{integer, [{min, 0}, {max, 255}]}`
- - New datatype alias `percent` for `{percent, integer}` (0-100)
+ - Support for partial (reusable) schema files. Helps reduce duplication [\#79](https://github.com/Kyorai/cuttlefish/pull/79)
+ - New datatype `boolean`: accepts `true`/`false` (atom or string). Replaces the common `{enum, [true, false]}` [\#77](https://github.com/Kyorai/cuttlefish/pull/77)
+ - New datatype `regex`: validates a regex and rejects patterns prone to excessive backtracking [\#75](https://github.com/Kyorai/cuttlefish/pull/75)
+ - New datatype `uri` (and `{uri, [Scheme]}`): validates a parseable URI with an allowed scheme and a non-empty host [\#75](https://github.com/Kyorai/cuttlefish/pull/75)
+ - Range constraints on `integer`: `{integer, [{min, N}, {max, N}, {gt, N}, {lt, N}]}`, plus shortcut atoms `non_negative` and `positive` [\#78](https://github.com/Kyorai/cuttlefish/pull/78)
+ - Range constraints on `float`: `{float, [{min, N}, {max, N}, {gt, N}, {lt, N}]}`, plus shortcut atoms `non_negative` and `positive` [\#78](https://github.com/Kyorai/cuttlefish/pull/78)
+ - New datatype alias `port` for `{integer, [{min, 0}, {max, 65535}]}` [\#78](https://github.com/Kyorai/cuttlefish/pull/78)
+ - New datatype alias `byte` for `{integer, [{min, 0}, {max, 255}]}` [\#78](https://github.com/Kyorai/cuttlefish/pull/78)
+ - New datatype alias `percent` for `{percent, integer}` (0-100) [\#78](https://github.com/Kyorai/cuttlefish/pull/78)
+ - Improved validation of input schema files [\#76](https://github.com/Kyorai/cuttlefish/pull/76)
+
+**Merged pull requests:**
+
+- Introduce schema partials [\#79](https://github.com/Kyorai/cuttlefish/pull/79) ([michaelklishin](https://github.com/michaelklishin))
+- Improve support for numerical data types [\#78](https://github.com/Kyorai/cuttlefish/pull/78) ([michaelklishin](https://github.com/michaelklishin))
+- New first class data type: booleans [\#77](https://github.com/Kyorai/cuttlefish/pull/77) ([michaelklishin](https://github.com/michaelklishin))
+- Improve validation of input schema files [\#76](https://github.com/Kyorai/cuttlefish/pull/76) ([michaelklishin](https://github.com/michaelklishin))
+- New data types: `regex` and `uri` [\#75](https://github.com/Kyorai/cuttlefish/pull/75) ([michaelklishin](https://github.com/michaelklishin))
 
 ## [v3.7.0](https://github.com/Kyorai/cuttlefish/tree/v3.7.0) (2026-05-11)
 
