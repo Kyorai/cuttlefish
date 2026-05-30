@@ -1,5 +1,13 @@
 # Changelog
 
+## [v3.9.1](https://github.com/Kyorai/cuttlefish/tree/v3.9.1) (2026-05-29)
+
+[Full Changelog](https://github.com/Kyorai/cuttlefish/compare/v3.9.0...v3.9.1)
+
+**Enhancements:**
+
+ - Erlang/OTP 29 compatibility: replaced deprecated prefix-`catch` expressions with `try ... catch ... end`. CI matrix now covers Erlang 26 through 29
+
 ## [v3.9.0](https://github.com/Kyorai/cuttlefish/tree/v3.9.0) (2026-05-29)
 
 [Full Changelog](https://github.com/Kyorai/cuttlefish/compare/v3.8.0...v3.9.0)
