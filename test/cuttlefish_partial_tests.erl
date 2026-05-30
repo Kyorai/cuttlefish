@@ -62,6 +62,16 @@ validator_passes_through_unchanged_test() ->
     {ok, [Out]} = cuttlefish_partial:rewrite([Term], ?BASE_OPTS),
     ?assertEqual(Term, Out).
 
+validator_5_tuple_passes_through_unchanged_test() ->
+    %% A validator declared with an options proplist (aliases,
+    %% deprecation hint) survives partial rewriting unchanged.
+    Fun = fun(_) -> true end,
+    Term = {validator, "pem_file", "must be a PEM file", Fun,
+            [{aliases, ["pem"]},
+             {deprecated, "3.9.0", "use the {datatype, file} form"}]},
+    {ok, [Out]} = cuttlefish_partial:rewrite([Term], ?BASE_OPTS),
+    ?assertEqual(Term, Out).
+
 partial_translation_emits_arity1_closure_with_bound_prefixes_test() ->
     Term = {partial_translation, "versions",
             fun(C, P, A) -> {C, P, A} end},

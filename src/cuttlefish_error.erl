@@ -226,6 +226,33 @@ xlate({range_violation, {Value, {gt, Bound}}}) ->
     io_lib:format("~tp must be strictly greater than ~tp", [Value, Bound]);
 xlate({range_violation, {Value, {lt, Bound}}}) ->
     io_lib:format("~tp must be strictly less than ~tp", [Value, Bound]);
+xlate({constraint_validator_failed, Value}) ->
+    io_lib:format("~tp was rejected by a constraint-list validator",
+                  [Value]);
+xlate({constraint_validator_unresolved, Name}) ->
+    io_lib:format("Constraint-list validator '~ts' is not defined in any "
+                  "loaded schema", [Name]);
+xlate({validator_options_invalid, Name, Opts}) ->
+    io_lib:format("Validator ~ts has invalid options: ~tp "
+                  "(expected a proplist with {aliases, [_]} and/or "
+                  "{deprecated, Since, Hint})", [Name, Opts]);
+xlate({validator_alias_not_a_string, Name, Bad}) ->
+    io_lib:format("Validator ~ts has a non-string alias: ~tp",
+                  [Name, Bad]);
+xlate({validator_aliases_contain_duplicates, Name}) ->
+    io_lib:format("Validator ~ts has duplicate entries in its aliases list",
+                  [Name]);
+xlate({validator_alias_collision, Alias, Owner, Other}) ->
+    io_lib:format("Validator alias '~ts' is claimed by both '~ts' and '~ts'",
+                  [Alias, Owner, Other]);
+xlate({validator_alias_shadows_name, Alias, OwnerName}) ->
+    io_lib:format("Validator alias '~ts' on '~ts' shadows the canonical "
+                  "validator name of the same string",
+                  [Alias, OwnerName]);
+xlate({validator_deprecated_malformed, Name, Bad}) ->
+    io_lib:format("Validator ~ts has a malformed {deprecated, ...} option: "
+                  "~tp (expected {deprecated, SinceString, HintString})",
+                  [Name, Bad]);
 xlate({partial_app_not_loadable, App, {"no such file or directory", _}}) ->
     io_lib:format("Could not load OTP application '~ts' to resolve "
                   "partial: its .app file is not on the code path. "

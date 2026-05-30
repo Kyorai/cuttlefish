@@ -63,6 +63,7 @@
     has_default/1,
     commented/1,
     datatype/1,
+    set_datatype/2,
     level/1,
     hidden/1,
     doc/1,
@@ -322,6 +323,12 @@ commented(M)        -> M#mapping.commented.
 -spec datatype(mapping()) -> cuttlefish_datatypes:datatype_list().
 datatype(M) -> M#mapping.datatype.
 
+%% Pipeline-internal: swaps the datatype list in place so a later
+%% stage can substitute resolved `{validator, Fun}' for the parsed
+%% `{validator, Name}' entries. Not intended for schema authors.
+-spec set_datatype(mapping(), cuttlefish_datatypes:datatype_list()) -> mapping().
+set_datatype(M, DT) -> M#mapping{datatype = DT}.
+
 -spec level(mapping()) -> basic | intermediate | advanced.
 level(M) -> M#mapping.level.
 
@@ -356,11 +363,28 @@ collect(M) -> M#mapping.collect.
 -spec validators(mapping(), [cuttlefish_validator:validator()]) -> [cuttlefish_validator:validator()].
 validators(M, Validators) ->
     lists:foldr(fun(VName, Vs) ->
-                        case lists:keyfind(VName, 2, Validators) of
+                        case find_validator(VName, Validators) of
                             false -> Vs;
                             V -> [V|Vs]
                         end
                 end, [], M#mapping.validators).
+
+%% Look up by canonical name first, then by alias. Canonical match
+%% wins so a validator named "X" beats an alias "X" on a different
+%% validator — the same precedence rule mapping aliases use.
+find_validator(Name, Validators) ->
+    case lists:keyfind(Name, 2, Validators) of
+        false ->
+            find_by_alias(Name, Validators);
+        V -> V
+    end.
+
+find_by_alias(_Name, []) -> false;
+find_by_alias(Name, [V | Rest]) ->
+    case lists:member(Name, cuttlefish_validator:aliases(V)) of
+        true  -> V;
+        false -> find_by_alias(Name, Rest)
+    end.
 
 -spec replace(mapping(), [mapping()]) -> [mapping()].
 replace(Mapping, ListOfMappings) ->

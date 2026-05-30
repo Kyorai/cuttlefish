@@ -1,6 +1,19 @@
 # Changelog
 
-## Unreleased
+## Unreleased (3.9.0)
+
+**Enhancements:**
+
+ - `allow_infinity` shortcut atom in integer/float/bytesize/duration constraint lists: accepts the atom `infinity` (also the matching string a conf file produces) alongside the numeric form
+ - Range constraints on `bytesize`: `{bytesize, [{min, N}, {max, N}, {gt, N}, {lt, N}]}`, plus the `non_negative` and `positive` shortcuts
+ - Range constraints on durations: `{duration, Unit, [Constraints]}` mirroring the integer/float syntax, with the bound expressed in the declared unit
+ - `{validator, Fun}` and `{validator, Name}` entries inside an integer/float/bytesize/duration constraint list. Constraints run left-to-right; first failure wins
+ - 5-tuple validator form: `{validator, Name, Desc, Fun, Options}`. Options accept `{aliases, [Name]}` (rename a validator without breaking call sites) and `{deprecated, Since, Hint}` (emit a single warn line on first use per load cycle)
+ - Built-in validators `"port"`, `"byte"`, `"valid_regex"` delegating to the matching 3.8.0 datatype. Injected on demand only when referenced; a user definition with the same name wins silently
+ - Built-in marker validator `"uri"` (no-op by design) so a schema that historically declared a no-op `"uri"` validator inline can drop the declaration without rewriting call sites
+ - New `cuttlefish_diff:render_normalised/1,2` library function that produces a deterministic, sorted, printable form of `cuttlefish_generator:map/2` output for line-diffing migration runs. Options: `{skip_funs, bool}`, `{atom_quoting, strict | loose}`
+
+## 3.8.0
 
 **Enhancements:**
 

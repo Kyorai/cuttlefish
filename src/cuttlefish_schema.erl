@@ -112,7 +112,8 @@ list_schemas(Dir) ->
 -spec filter(schema() | cuttlefish_error:errorlist()) -> schema() | cuttlefish_error:errorlist().
 filter({errorlist, Errorlist}) ->
     {errorlist, Errorlist};
-filter({Translations, Mappings, Validators}) ->
+filter({Translations, Mappings, Validators0}) ->
+    Validators = inject_builtin_validators(Mappings, Validators0),
     Counts = count_mappings(Mappings),
     {MappingsToCheck, _} = lists:unzip(Counts),
     NewMappings = lists:foldl(
@@ -129,13 +130,161 @@ filter({Translations, Mappings, Validators}) ->
 
     case validate_aliases(NewMappings) of
         ok ->
-            case validate_validator_refs(NewMappings, Validators) of
-                ok -> {Translations, NewMappings, Validators};
+            case validate_validator_aliases(Validators) of
+                ok ->
+                    case validate_validator_refs(NewMappings, Validators) of
+                        ok -> {Translations, NewMappings, Validators};
+                        {errorlist, _} = Errors -> Errors
+                    end;
                 {errorlist, _} = Errors -> Errors
             end;
         {errorlist, _} = Errors ->
             Errors
     end.
+
+%% A small set of built-in validators is shipped with cuttlefish so
+%% schemas can refer to widely-used names — `"port"', `"byte"',
+%% `"valid_regex"', `"uri"' — without having to declare them in-tree.
+%% A user definition with the same name wins (the user is already in
+%% `Validators'); the builtin is only added when no such name is
+%% defined yet.
+%%
+%% `"port"' and `"byte"' delegate to the matching datatype.
+%% `"valid_regex"' delegates to the `regex' datatype.
+%% `"uri"' is a no-op marker validator with a deprecation hint
+%% pointing at the stricter `uri' datatype.
+-spec inject_builtin_validators(
+        [cuttlefish_mapping:mapping()],
+        [cuttlefish_validator:validator()]) ->
+    [cuttlefish_validator:validator()].
+inject_builtin_validators(Mappings, Validators) ->
+    %% Only inject a builtin whose name is actually referenced
+    %% somewhere in the schema — keeps the validator list unchanged
+    %% for schemas that don't use these names. When the name is
+    %% already taken (user-defined or previously injected), do
+    %% nothing silently: the deprecation hint on the builtin is the
+    %% channel for nudging the migration, not a per-load shadow
+    %% warning that fires every time a schema author chooses to keep
+    %% their local definition.
+    Referenced = referenced_validator_names(Mappings),
+    lists:foldl(
+        fun(Raw, Acc) ->
+            Name = builtin_name(Raw),
+            case sets:is_element(Name, Referenced)
+                 andalso not is_name_taken(Raw, Acc) of
+                true ->
+                    case cuttlefish_validator:parse(Raw) of
+                        {error, _} -> Acc;
+                        V -> [V | Acc]
+                    end;
+                false -> Acc
+            end
+        end, Validators, builtin_validator_specs()).
+
+%% Builtin specs all use the 5-tuple form (they carry a deprecation
+%% hint), so a single clause is enough.
+builtin_name({validator, Name, _, _, _}) -> Name.
+
+referenced_validator_names(Mappings) ->
+    Names = lists:flatmap(
+        fun(M) ->
+            DT = cuttlefish_mapping:datatype(M),
+            cuttlefish_mapping:validators(M)
+                ++ cuttlefish_datatypes:constraint_validator_refs(DT)
+        end, Mappings),
+    sets:from_list(Names).
+
+%% Taken if some already-parsed validator has the same canonical
+%% name OR carries the name as one of its aliases.
+is_name_taken({validator, Name, _, _, _}, Validators) ->
+    lists:any(
+      fun(V) -> cuttlefish_validator:matches_name(Name, V) end,
+      Validators).
+
+builtin_validator_specs() ->
+    [
+     %% Mechanically equivalent to a hand-written `>=0 && =<255'.
+     {validator, "byte", "0..255",
+      fun(V) ->
+          case cuttlefish_datatypes:from_string(V, byte) of
+              {error, _} -> false;
+              _          -> true
+          end
+      end,
+      [{deprecated, "3.9.0",
+        "use the {datatype, byte} form instead"}]},
+     %% Accepts the full 0..65535 IANA range; some schemas use a
+     %% stricter predicate and will see a shift in accepted values
+     %% if they switch to this builtin.
+     {validator, "port", "0..65535",
+      fun(V) ->
+          case cuttlefish_datatypes:from_string(V, port) of
+              {error, _} -> false;
+              _          -> true
+          end
+      end,
+      [{deprecated, "3.9.0",
+        "use the {datatype, port} form instead "
+        "(accepts the full 0..65535 IANA range)"}]},
+     %% Rejects empty patterns and patterns prone to catastrophic
+     %% backtracking; this is stricter than a plain re:compile/1.
+     {validator, "valid_regex", "compilable regular expression",
+      fun(V) ->
+          case cuttlefish_datatypes:from_string(V, regex) of
+              {error, _} -> false;
+              _          -> true
+          end
+      end,
+      [{deprecated, "3.9.0",
+        "use the {datatype, regex} form instead "
+        "(also rejects patterns prone to catastrophic backtracking)"}]},
+     %% No-op marker so call sites whose values are templates,
+     %% placeholders, or otherwise not strictly parseable as URIs
+     %% keep working without each schema having to declare its own
+     %% trivial `"uri"' validator.
+     {validator, "uri",
+      "URI-shaped string; structural validation deferred to application code",
+      fun(_) -> true end,
+      [{deprecated, "3.9.0",
+        "for structural URI validation, use {datatype, uri} "
+        "or {datatype, {uri, [Schemes]}} instead"}]}
+    ].
+
+%% Mirror the per-mapping alias collision rules for validators:
+%% reject aliases that shadow another validator's canonical name and
+%% reject the same alias appearing on two different validators.
+-spec validate_validator_aliases([cuttlefish_validator:validator()]) ->
+    ok | cuttlefish_error:errorlist().
+validate_validator_aliases(Validators) ->
+    Names = [cuttlefish_validator:name(V) || V <- Validators],
+    NameSet = sets:from_list(Names),
+    AliasIndex = lists:flatmap(
+        fun(V) ->
+            Name = cuttlefish_validator:name(V),
+            [{A, Name} || A <- cuttlefish_validator:aliases(V)]
+        end, Validators),
+    Errors = collect_validator_alias_errors(AliasIndex, NameSet, []),
+    case Errors of
+        [] -> ok;
+        _  -> {errorlist, lists:reverse(Errors)}
+    end.
+
+collect_validator_alias_errors([], _NameSet, Errors) -> Errors;
+collect_validator_alias_errors([{Alias, OwnerName} | Rest], NameSet, Errors) ->
+    NewErrors = case sets:is_element(Alias, NameSet) andalso Alias =/= OwnerName of
+        true ->
+            [{error, {validator_alias_shadows_name, Alias, OwnerName}}
+             | Errors];
+        false ->
+            Other = lists:keyfind(Alias, 1, Rest),
+            case Other of
+                {Alias, OtherOwner} when OtherOwner =/= OwnerName ->
+                    [{error, {validator_alias_collision, Alias, OwnerName, OtherOwner}}
+                     | Errors];
+                _ -> Errors
+            end
+    end,
+    collect_validator_alias_errors(Rest, NameSet, NewErrors).
 
 %% @doc Checks that every validator name referenced by a mapping's
 %% `{validators, [...]}` opt resolves to a defined validator.
@@ -147,12 +296,22 @@ filter({Translations, Mappings, Validators}) ->
     ok | cuttlefish_error:errorlist().
 validate_validator_refs(Mappings, Validators) ->
     Defined = sets:from_list(
-        [cuttlefish_validator:name(V) || V <- Validators]),
+        lists:flatmap(
+          fun(V) ->
+              [cuttlefish_validator:name(V) | cuttlefish_validator:aliases(V)]
+          end, Validators)),
     Missing = lists:flatmap(
         fun(M) ->
             Var = cuttlefish_variable:format(cuttlefish_mapping:variable(M)),
-            [{Var, N} || N <- cuttlefish_mapping:validators(M),
-                         not sets:is_element(N, Defined)]
+            FromValidators = [{Var, N}
+                              || N <- cuttlefish_mapping:validators(M),
+                                 not sets:is_element(N, Defined)],
+            DT = cuttlefish_mapping:datatype(M),
+            FromConstraints =
+                [{Var, N}
+                 || N <- cuttlefish_datatypes:constraint_validator_refs(DT),
+                    not sets:is_element(N, Defined)],
+            FromValidators ++ FromConstraints
         end, Mappings),
     case Missing of
         [] -> ok;
@@ -377,7 +536,19 @@ parse_schema(ScannedTokens, CommentTokens, {TAcc, MAcc, VAcc, EAcc}) ->
         {translation, Return} ->
             {cuttlefish_translation:parse_and_merge(Return, TAcc), MAcc, VAcc, EAcc};
         {validator, Return} ->
-            {TAcc, MAcc, cuttlefish_validator:parse_and_merge(Return, VAcc), EAcc};
+            %% Pre-flight the parse so a malformed validator surfaces
+            %% as an error rather than getting silently dropped. Code
+            %% later in the pipeline accesses validator record fields
+            %% and would crash if an `{error, _}' slipped into the
+            %% validators list.
+            case cuttlefish_validator:parse(Return) of
+                {error, _} = E ->
+                    {TAcc, MAcc, VAcc, [E | EAcc]};
+                _ ->
+                    {TAcc, MAcc,
+                     cuttlefish_validator:parse_and_merge(Return, VAcc),
+                     EAcc}
+            end;
         {include_partial, {include_partial, {App, Name}, IncludeOpts}}
                 when is_atom(App), is_list(Name), is_list(IncludeOpts) ->
             apply_partial(App, Name, IncludeOpts, {TAcc, MAcc, VAcc, EAcc});
@@ -417,9 +588,21 @@ annotate_partial_source(Other, _App, _Name) ->
 apply_partial_term({mapping, _, _, _} = Raw, {T, M, V, E}) ->
     {T, cuttlefish_mapping:parse_and_merge(Raw, M), V, E};
 apply_partial_term({validator, _, _, _} = Raw, {T, M, V, E}) ->
-    {T, M, cuttlefish_validator:parse_and_merge(Raw, V), E};
+    apply_validator_partial_term(Raw, T, M, V, E);
+apply_partial_term({validator, _, _, _, _} = Raw, {T, M, V, E}) ->
+    apply_validator_partial_term(Raw, T, M, V, E);
 apply_partial_term({translation, _, _} = Raw, {T, M, V, E}) ->
     {cuttlefish_translation:parse_and_merge(Raw, T), M, V, E}.
+
+%% Route parse errors to the error accumulator so they cannot
+%% corrupt the validators list.
+apply_validator_partial_term(Raw, T, M, V, E) ->
+    case cuttlefish_validator:parse(Raw) of
+        {error, _} = Err ->
+            {T, M, V, [Err | E]};
+        _ ->
+            {T, M, cuttlefish_validator:parse_and_merge(Raw, V), E}
+    end.
 
 parse_schema_tokens(Scanned) ->
     parse_schema_tokens(Scanned, []).

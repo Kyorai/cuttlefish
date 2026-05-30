@@ -1,0 +1,9 @@
+%% Exercises a 5-tuple validator declaration with both `aliases' and
+%% `deprecated' options.
+
+{validator, "even", "even integer",
+ fun(N) -> is_integer(N) andalso N rem 2 =:= 0 end,
+ [{aliases, ["evens"]},
+  {deprecated, "3.9.0", "use {integer, [{validator, fun ...}]} instead"}]}.
+
+{mapping, "n", "n", [{datatype, integer}, {validators, ["even"]}]}.
