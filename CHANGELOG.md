@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased (3.9.0)
+## [v3.9.0](https://github.com/Kyorai/cuttlefish/tree/v3.9.0) (2026-05-29)
+
+[Full Changelog](https://github.com/Kyorai/cuttlefish/compare/v3.8.0...v3.9.0)
 
 **Enhancements:**
 
@@ -13,7 +15,9 @@
  - Built-in marker validator `"uri"` (no-op by design) so a schema that historically declared a no-op `"uri"` validator inline can drop the declaration without rewriting call sites
  - New `cuttlefish_diff:render_normalised/1,2` library function that produces a deterministic, sorted, printable form of `cuttlefish_generator:map/2` output for line-diffing migration runs. Options: `{skip_funs, bool}`, `{atom_quoting, strict | loose}`
 
-## 3.8.0
+## [v3.8.0](https://github.com/Kyorai/cuttlefish/tree/v3.8.0) (2026-05-26)
+
+[Full Changelog](https://github.com/Kyorai/cuttlefish/compare/v3.7.0...v3.8.0)
 
 **Enhancements:**
 
