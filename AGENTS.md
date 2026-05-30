@@ -370,10 +370,37 @@ warnings.
 
 ## CI
 
-`.github/workflows/ci.yml` runs the test suite on Erlang 26, 27, and 28,
+`.github/workflows/ci.yml` runs the test suite on Erlang 26, 27, 28, and 29,
 on both `ubuntu-latest` and `windows-latest`. Dialyzer runs only on the
-latest OTP release (28) on Ubuntu. The project targets these OTP versions
+latest OTP release (29) on Ubuntu. The project targets these OTP versions
 per `README.md`.
+
+## Releases
+
+### Prerequisites
+
+ * `github_changelog_generator` on `PATH`
+ * `gh` authenticated against `Kyorai/cuttlefish`
+ * `rebar3` with the `rebar3_hex` plugin; Hex.pm account with publish rights
+ * `user.signingkey` set in git config (so `git tag --sign` works)
+ * `GITHUB_API_TOKEN` exported with `repo` scope
+
+### How to Roll a New Release
+
+For new version `X.Y.Z`:
+
+ 1. `git checkout -b cuttlefish-X.Y.Z` from up-to-date `main`
+ 2. Bump `vsn` in `src/cuttlefish.app.src` to `"X.Y.Z"`
+ 3. `github_changelog_generator --future-release vX.Y.Z --user Kyorai --project cuttlefish --token "$GITHUB_API_TOKEN"`, then group entries under `Enhancements` / `Bug Fixes` and drop dependabot noise
+ 4. `rm -rf _build && rebar3 compile && rebar3 eunit && rebar3 dialyzer`
+ 5. `git commit -a -m 'vX.Y.Z' && git push -u origin cuttlefish-X.Y.Z`
+ 6. Open a PR, wait for CI green on all OTP versions, merge
+ 7. `git checkout main && git pull origin main`
+ 8. `git remote prune origin && git branch -d cuttlefish-X.Y.Z`
+ 9. `git tag --annotate --sign --message='cuttlefish X.Y.Z' 'vX.Y.Z'`
+ 10. `git push --tags`
+ 11. `gh release create vX.Y.Z --verify-tag --title 'vX.Y.Z' --latest --generate-notes`
+ 12. `rebar3 hex publish` — confirm the prompt shows `X.Y.Z`; `rebar3` refuses to re-publish an existing version
 
 ## Comments
 
