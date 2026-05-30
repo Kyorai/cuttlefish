@@ -374,7 +374,9 @@ print(String) ->
     %% A logger with no handler silently drops `?LOG_ERROR'; write
     %% to `standard_error' too so misconfiguration is never silent.
     io:format(standard_error, "~ts~n", [String]),
-    catch ?LOG_ERROR("~ts", [String]),
+    try ?LOG_ERROR("~ts", [String])
+    catch _:_ -> ok
+    end,
     ok.
 
 -ifdef(TEST).
