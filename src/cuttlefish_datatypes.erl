@@ -39,7 +39,9 @@
                     fqdn |
                     domain_socket |
                     {duration, cuttlefish_duration:time_unit() } |
+                    {duration, cuttlefish_duration:time_unit(), [numeric_constraint()] | numeric_shortcut()} |
                     bytesize |
+                    {bytesize, [numeric_constraint()] | numeric_shortcut()} |
                     {percent, integer} |
                     {percent, float} |
                     percent |
@@ -58,9 +60,13 @@
                             | {max, number()}
                             | {gt,  number()}
                             | {lt,  number()}
-                            | numeric_shortcut().
+                            | numeric_shortcut()
+                            | allow_infinity
+                            | {validator, validator_fun()}
+                            | {validator, string()}.
 
 -type numeric_shortcut() :: non_negative | positive.
+-type validator_fun() :: fun((term()) -> boolean()).
 -type extended() :: { integer, integer() } |
                     { string, string() } |
                     { binary, binary() } |
@@ -86,7 +92,9 @@
          is_valid_list/1,
          from_string/2,
          to_string/2,
-         extended_from/1
+         extended_from/1,
+         constraint_validator_refs/1,
+         resolve_constraint_validators/2
 ]).
 
 -spec is_supported(any()) -> boolean().
@@ -112,6 +120,12 @@ is_supported({duration, m}) -> true;
 is_supported({duration, s}) -> true;
 is_supported({duration, ms}) -> true;
 is_supported(bytesize) -> true;
+is_supported({bytesize, Constraints}) ->
+    valid_constraints(Constraints, integer);
+is_supported({duration, Unit, Constraints})
+  when Unit =:= f; Unit =:= w; Unit =:= d; Unit =:= h;
+       Unit =:= m; Unit =:= s; Unit =:= ms ->
+    valid_constraints(Constraints, integer);
 is_supported({percent, integer}) -> true;
 is_supported({percent, float}) -> true;
 is_supported(percent) -> true;
@@ -213,10 +227,23 @@ to_string(Integer, integer) when is_list(Integer) -> Integer;
 to_string(Value, port) -> to_string(Value, integer);
 to_string(Value, byte) -> to_string(Value, integer);
 to_string(Value, percent) -> to_string(Value, {percent, integer});
+%% The `allow_infinity' shortcut leaves the atom `infinity' unchanged
+%% on the conversion path; here the printable form is the literal
+%% characters. These clauses must precede the generic constraint
+%% clauses below — those would match first and recurse into the
+%% integer/float clauses, which reject the atom.
+to_string(infinity, {integer, _}) -> "infinity";
+to_string(infinity, {float, _}) -> "infinity";
+to_string(infinity, {bytesize, _}) -> "infinity";
+to_string(infinity, {duration, _, _}) -> "infinity";
 to_string(Value, {integer, Constraints}) when is_list(Constraints); is_atom(Constraints) ->
     to_string(Value, integer);
 to_string(Value, {float, Constraints}) when is_list(Constraints); is_atom(Constraints) ->
     to_string(Value, float);
+to_string(Value, {bytesize, Constraints}) when is_list(Constraints); is_atom(Constraints) ->
+    to_string(Value, bytesize);
+to_string(Value, {duration, Unit, Constraints}) when is_list(Constraints); is_atom(Constraints) ->
+    to_string(Value, {duration, Unit});
 
 to_string({IP, Port}, ip) when is_list(IP), is_integer(Port) -> IP ++ ":" ++ integer_to_list(Port);
 to_string(IPString, ip) when is_list(IPString) -> IPString;
@@ -333,10 +360,20 @@ from_string(Value, percent) ->
     from_string(Value, {percent, integer});
 
 from_string(Value, {integer, Constraints}) ->
-    apply_numeric_constraints(from_string(Value, integer), Constraints, integer);
+    case maybe_infinity(Value, Constraints) of
+        {ok, Inf}      -> Inf;
+        not_applicable ->
+            apply_numeric_constraints(from_string(Value, integer),
+                                      Constraints, integer)
+    end;
 
 from_string(Value, {float, Constraints}) ->
-    apply_numeric_constraints(from_string(Value, float), Constraints, float);
+    case maybe_infinity(Value, Constraints) of
+        {ok, Inf}      -> Inf;
+        not_applicable ->
+            apply_numeric_constraints(from_string(Value, float),
+                                      Constraints, float)
+    end;
 
 from_string({IP, Port}, ip) when is_list(IP), is_integer(Port) -> {IP, Port};
 from_string(String, ip) when is_list(String) ->
@@ -395,8 +432,24 @@ from_string(String, domain_socket) when is_list(String) ->
 from_string(Duration, {duration, _}) when is_integer(Duration) -> Duration;
 from_string(Duration, {duration, Unit}) when is_list(Duration) -> cuttlefish_duration:parse(Duration, Unit);
 
+from_string(Value, {duration, Unit, Constraints}) ->
+    case maybe_infinity(Value, Constraints) of
+        {ok, Inf}      -> Inf;
+        not_applicable ->
+            apply_numeric_constraints(from_string(Value, {duration, Unit}),
+                                      Constraints, integer)
+    end;
+
 from_string(Bytesize, bytesize) when is_integer(Bytesize) -> Bytesize;
 from_string(Bytesize, bytesize) when is_list(Bytesize) -> cuttlefish_bytesize:parse(Bytesize);
+
+from_string(Value, {bytesize, Constraints}) ->
+    case maybe_infinity(Value, Constraints) of
+        {ok, Inf}      -> Inf;
+        not_applicable ->
+            apply_numeric_constraints(from_string(Value, bytesize),
+                                      Constraints, integer)
+    end;
 
 from_string(String, string) when is_list(String) -> String;
 
@@ -631,20 +684,45 @@ validate_uri_schemes(Schemes) when is_list(Schemes) ->
 
 valid_constraints(non_negative, _BaseType) -> true;
 valid_constraints(positive,     _BaseType) -> true;
+valid_constraints(allow_infinity, _BaseType) -> true;
 valid_constraints(Constraints, BaseType) when is_list(Constraints) ->
     lists:all(fun(C) -> valid_constraint(C, BaseType) end, Constraints);
 valid_constraints(_, _) -> false.
 
 valid_constraint(non_negative, _) -> true;
 valid_constraint(positive,     _) -> true;
+valid_constraint(allow_infinity, _) -> true;
 valid_constraint({min, N}, T) -> is_bound(N, T);
 valid_constraint({max, N}, T) -> is_bound(N, T);
 valid_constraint({gt,  N}, T) -> is_bound(N, T);
 valid_constraint({lt,  N}, T) -> is_bound(N, T);
+valid_constraint({validator, Fun}, _) when is_function(Fun, 1) -> true;
+valid_constraint({validator, Name}, _) when is_list(Name) -> true;
 valid_constraint(_, _) -> false.
 
 is_bound(N, integer) -> is_integer(N);
 is_bound(N, float)   -> is_number(N).
+
+%% `allow_infinity' in the constraint list lets the atom `infinity'
+%% bypass numeric parsing and bound checks. Conf-file values arrive
+%% as the matching string; both forms are accepted. When the bypass
+%% fires the remaining constraints are skipped: the atom is meant to
+%% be a valid value regardless of bounds.
+maybe_infinity(Value, Constraints) ->
+    case allows_infinity(Constraints) andalso is_infinity_value(Value) of
+        true  -> {ok, infinity};
+        false -> not_applicable
+    end.
+
+allows_infinity(allow_infinity) -> true;
+allows_infinity(Constraints) when is_list(Constraints) ->
+    lists:member(allow_infinity, Constraints);
+allows_infinity(_) -> false.
+
+is_infinity_value(infinity) -> true;
+is_infinity_value("infinity") -> true;
+is_infinity_value(<<"infinity">>) -> true;
+is_infinity_value(_) -> false.
 
 apply_numeric_constraints({error, _} = E, _Constraints, _BaseType) ->
     E;
@@ -655,21 +733,102 @@ expand_constraints(non_negative, integer) -> [{min, 0}];
 expand_constraints(non_negative, float)   -> [{min, +0.0}];
 expand_constraints(positive, integer) -> [{min, 1}];
 expand_constraints(positive, float)   -> [{gt, +0.0}];
+%% `allow_infinity' is consumed by `maybe_infinity'; drop it here so
+%% the numeric path doesn't try to evaluate it as a bound.
+expand_constraints(allow_infinity, _) -> [];
 expand_constraints(Constraints, BaseType) when is_list(Constraints) ->
     lists:flatmap(fun(C) -> expand_constraints(C, BaseType) end, Constraints);
 expand_constraints(C, _BaseType) -> [C].
 
 check_constraints(Value, []) -> Value;
+check_constraints(Value, [{validator, Fun} | Rest]) when is_function(Fun, 1) ->
+    case run_validator(Fun, Value) of
+        true  -> check_constraints(Value, Rest);
+        false -> {error, {constraint_validator_failed, Value}}
+    end;
+%% A string-form name here means name resolution did not run; surface
+%% the orphan rather than silently treating it as a pass.
+check_constraints(_Value, [{validator, Name} | _]) when is_list(Name) ->
+    {error, {constraint_validator_unresolved, Name}};
 check_constraints(Value, [Constraint | Rest]) ->
     case satisfies(Value, Constraint) of
         true  -> check_constraints(Value, Rest);
         false -> {error, {range_violation, {Value, Constraint}}}
     end.
 
+%% Validator funs may throw; treat any exception as a failure rather
+%% than letting it escape into the surrounding pipeline.
+run_validator(Fun, Value) ->
+    try Fun(Value) of
+        true -> true;
+        _    -> false
+    catch
+        _:_ -> false
+    end.
+
 satisfies(V, {min, N}) -> V >= N;
 satisfies(V, {max, N}) -> V =< N;
 satisfies(V, {gt,  N}) -> V >  N;
 satisfies(V, {lt,  N}) -> V <  N.
+
+%% Collects every string-form name referenced as `{validator, Name}'
+%% inside any constraint list in `DT'. Returned sorted and unique so
+%% schema-time pre-flight checks can run against a stable set —
+%% catching a typo at schema load rather than at config generation.
+-spec constraint_validator_refs(datatype() | [datatype()]) -> [string()].
+constraint_validator_refs(DT) ->
+    lists:usort(collect_refs(DT)).
+
+collect_refs(L) when is_list(L) ->
+    lists:flatmap(fun collect_refs/1, L);
+collect_refs({integer, Cs}) -> collect_constraint_refs(Cs);
+collect_refs({float, Cs})   -> collect_constraint_refs(Cs);
+collect_refs({bytesize, Cs}) -> collect_constraint_refs(Cs);
+collect_refs({duration, _Unit, Cs}) -> collect_constraint_refs(Cs);
+collect_refs({list, Inner}) -> collect_refs(Inner);
+collect_refs(_) -> [].
+
+collect_constraint_refs(L) when is_list(L) ->
+    [N || {validator, N} <- L, is_list(N)];
+collect_constraint_refs(_) -> [].
+
+%% Walks the datatype expression and replaces each `{validator, Name}'
+%% inside a constraint list with the resolved `{validator, Fun}'.
+%% Names that don't resolve are left in place; the runtime constraint
+%% pipeline surfaces them as `{constraint_validator_unresolved, Name}'.
+%% Refs are expected to have been validated up front, so an unresolved
+%% name reaching the runtime indicates a genuinely orphaned reference.
+-spec resolve_constraint_validators(
+        datatype() | [datatype()],
+        fun((string()) -> {ok, validator_fun()} | not_found)) ->
+    datatype() | [datatype()].
+resolve_constraint_validators(DT, Lookup) ->
+    walk_resolve(DT, Lookup).
+
+walk_resolve(L, Lookup) when is_list(L) ->
+    [walk_resolve(E, Lookup) || E <- L];
+walk_resolve({integer, Cs}, Lookup) ->
+    {integer, resolve_cs(Cs, Lookup)};
+walk_resolve({float, Cs}, Lookup) ->
+    {float, resolve_cs(Cs, Lookup)};
+walk_resolve({bytesize, Cs}, Lookup) ->
+    {bytesize, resolve_cs(Cs, Lookup)};
+walk_resolve({duration, Unit, Cs}, Lookup) ->
+    {duration, Unit, resolve_cs(Cs, Lookup)};
+walk_resolve({list, Inner}, Lookup) ->
+    {list, walk_resolve(Inner, Lookup)};
+walk_resolve(Other, _Lookup) -> Other.
+
+resolve_cs(Cs, Lookup) when is_list(Cs) ->
+    [resolve_c(C, Lookup) || C <- Cs];
+resolve_cs(C, _Lookup) -> C.
+
+resolve_c({validator, Name}, Lookup) when is_list(Name) ->
+    case Lookup(Name) of
+        {ok, Fun} when is_function(Fun, 1) -> {validator, Fun};
+        _ -> {validator, Name}
+    end;
+resolve_c(C, _Lookup) -> C.
 
 -ifdef(TEST).
 

@@ -214,6 +214,28 @@ full_pipeline_with_included_partial_produces_expected_app_config_test() ->
     ?assertEqual(lists:sort(['tlsv1.2', 'tlsv1.3']),
                  lists:sort(Versions)).
 
+partial_with_5_tuple_validator_loads_and_runs_test() ->
+    %% A partial containing a 5-tuple validator (with aliases and a
+    %% deprecation hint) must pass sanitize, survive rewrite, and
+    %% land in the merged validator set with its options intact.
+    add_fixture_path(),
+    Schema =
+        "{include_partial, {sample_app, \"with_5_tuple_validator\"},\n"
+        "    [{prefix, \"p\"}, {app_prefix, \"a\"}]}.\n",
+    {_T, Mappings, Validators} = cuttlefish_schema:strings([Schema]),
+    [V] = Validators,
+    ?assertEqual("even", cuttlefish_validator:name(V)),
+    ?assertEqual(["evens"], cuttlefish_validator:aliases(V)),
+    ?assertMatch({"3.9.0", _}, cuttlefish_validator:deprecated(V)),
+    ?assertEqual(1, length(Mappings)),
+    %% The validator actually fires through the pipeline.
+    ?assertMatch([{a, [{n, 4}]}],
+                 cuttlefish_generator:map(
+                   {_T, Mappings, Validators}, [{["p", "n"], "4"}])),
+    ?assertMatch({error, validation, _},
+                 cuttlefish_generator:map(
+                   {_T, Mappings, Validators}, [{["p", "n"], "5"}])).
+
 full_pipeline_applies_partial_defaults_test() ->
     %% A partial mapping with `{default, _}` contributes that default
     %% to the consumer's app.config when the conf is silent.

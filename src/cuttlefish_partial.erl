@@ -38,12 +38,16 @@
 -type partial_term() ::
         {mapping, string(), string(), [proplists:property()]}
       | {validator, string(), string(), fun((term()) -> boolean())}
+      | {validator, string(), string(), fun((term()) -> boolean()),
+         [proplists:property()]}
       | {partial_translation, string(),
          fun((cuttlefish_conf:conf(), string(), string()) -> term())}.
 
 -type emitted_term() ::
         {mapping, string(), string(), [proplists:property()]}
       | {validator, string(), string(), fun((term()) -> boolean())}
+      | {validator, string(), string(), fun((term()) -> boolean()),
+         [proplists:property()]}
       | {translation, string(),
          fun((cuttlefish_conf:conf()) -> term())}.
 
@@ -354,6 +358,8 @@ sanitize(App, Name, [{mapping, _, _, Opts} | Rest]) when is_list(Opts) ->
     sanitize(App, Name, Rest);
 sanitize(App, Name, [{validator, _, _, _} | Rest]) ->
     sanitize(App, Name, Rest);
+sanitize(App, Name, [{validator, _, _, _, _} | Rest]) ->
+    sanitize(App, Name, Rest);
 sanitize(App, Name, [{partial_translation, _, _} | Rest]) ->
     sanitize(App, Name, Rest);
 sanitize(_App, _Name, [{translation, _, _} | _]) ->
@@ -395,6 +401,8 @@ rewrite_term({mapping, ConfKey, AppKey, Opts}, Prefix, AppPrefix, Exclude, Overr
                   NewOpts}}
     end;
 rewrite_term({validator, _, _, _} = V, _Prefix, _AppPrefix, _Exclude, _Overrides) ->
+    {ok, V};
+rewrite_term({validator, _, _, _, _} = V, _Prefix, _AppPrefix, _Exclude, _Overrides) ->
     {ok, V};
 rewrite_term({partial_translation, BareKey, Fun}, Prefix, AppPrefix, Exclude, _Overrides) ->
     case excluded(BareKey, Exclude) of

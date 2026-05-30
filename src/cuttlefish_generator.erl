@@ -106,14 +106,19 @@ map_value_sub(Schema, Config, ParsedArgs) ->
 -spec map_transform_datatypes(cuttlefish_schema:schema(), cuttlefish_conf:conf(), [proplists:property()]) ->
                                      [proplists:property()] |
                                      {error, atom(), cuttlefish_error:errorlist()}.
-map_transform_datatypes({_, Mappings, _} = Schema, DConfig, ParsedArgs) ->
+map_transform_datatypes({_, Mappings0, Validators} = Schema, DConfig, ParsedArgs) ->
     %% Everything in DConfig is of datatype "string",
     %% transform_datatypes turns them into other erlang terms
     %% based on the schema
     _ = ?LOG_DEBUG("Applying Datatypes"),
+    %% Resolve `{validator, Name}' entries inside constraint lists to
+    %% `{validator, Fun}' before datatype conversion runs, so the
+    %% conversion pass never has to consult the validator table.
+    Mappings = resolve_constraint_validators_in_mappings(Mappings0, Validators),
+    Schema1 = setelement(2, Schema, Mappings),
     case transform_datatypes(DConfig, Mappings, ParsedArgs) of
         {NewConf, []} ->
-            map_validate(Schema, NewConf);
+            map_validate(Schema1, NewConf);
         {_, EList} ->
             {error, transform_datatypes, {errorlist, EList}}
     end.
@@ -742,10 +747,14 @@ find_mapping(Variable, Mappings) ->
 -spec run_validations(cuttlefish_schema:schema(), cuttlefish_conf:conf())
     -> boolean()|list(cuttlefish_error:error()).
 run_validations({_, Mappings, Validators}, Conf) ->
+    %% Fresh per-pipeline warned-set: a validator's deprecation hint
+    %% fires once per load cycle, no matter how many call sites use it.
+    clear_deprecation_warned(),
     Validations = lists:flatten([ begin
         Vs = cuttlefish_mapping:validators(M, Validators),
         Value = proplists:get_value(cuttlefish_mapping:variable(M), Conf),
         [ begin
+            warn_if_deprecated(V, M),
             Validator = cuttlefish_validator:func(V),
             case {Value, Validator(Value)} of
                 {undefined, _} -> true;
@@ -768,6 +777,66 @@ run_validations({_, Mappings, Validators}, Conf) ->
     case lists:all(fun(X) -> X =:= true end, Validations) of
         true -> true;
         _ -> Validations
+    end.
+
+%% Build a name->Fun lookup, then rewrite each mapping's datatype so
+%% downstream stages see only resolved `{validator, Fun}' entries.
+-spec resolve_constraint_validators_in_mappings(
+        [cuttlefish_mapping:mapping()],
+        [cuttlefish_validator:validator()]) ->
+    [cuttlefish_mapping:mapping()].
+resolve_constraint_validators_in_mappings(Mappings, Validators) ->
+    Lookup = fun(Name) -> lookup_validator_fun(Name, Validators) end,
+    [ begin
+          DT = cuttlefish_mapping:datatype(M),
+          NewDT = cuttlefish_datatypes:resolve_constraint_validators(DT, Lookup),
+          cuttlefish_mapping:set_datatype(M, NewDT)
+      end || M <- Mappings ].
+
+%% Canonical name wins over alias: a validator declared with the
+%% same string as another's alias resolves to the canonical owner.
+lookup_validator_fun(Name, Validators) ->
+    case lists:search(
+           fun(V) -> cuttlefish_validator:name(V) =:= Name end,
+           Validators) of
+        {value, V} -> {ok, cuttlefish_validator:func(V)};
+        false ->
+            case lists:search(
+                   fun(V) -> lists:member(Name, cuttlefish_validator:aliases(V)) end,
+                   Validators) of
+                {value, V} -> {ok, cuttlefish_validator:func(V)};
+                false      -> not_found
+            end
+    end.
+
+-define(DEPRECATION_WARNED_KEY, {?MODULE, deprecation_warned}).
+
+clear_deprecation_warned() ->
+    erase(?DEPRECATION_WARNED_KEY),
+    ok.
+
+warn_if_deprecated(Validator, Mapping) ->
+    case cuttlefish_validator:deprecated(Validator) of
+        undefined -> ok;
+        {Since, Hint} ->
+            Name = cuttlefish_validator:name(Validator),
+            Warned = case get(?DEPRECATION_WARNED_KEY) of
+                undefined -> sets:new();
+                S         -> S
+            end,
+            case sets:is_element(Name, Warned) of
+                true -> ok;
+                false ->
+                    Var = cuttlefish_variable:format(
+                            cuttlefish_mapping:variable(Mapping)),
+                    Msg = io_lib:format(
+                        "Validator '~ts' is marked deprecated as of ~ts: "
+                        "~ts (first observed on mapping ~ts)",
+                        [Name, Since, Hint, Var]),
+                    cuttlefish:warn(lists:flatten(Msg)),
+                    put(?DEPRECATION_WARNED_KEY, sets:add_element(Name, Warned)),
+                    ok
+            end
     end.
 
 
@@ -806,16 +875,18 @@ validate(Schema, Config) ->
 
 -spec validate(cuttlefish_schema:schema(), cuttlefish_conf:conf(), [proplists:property()]) ->
     ok | {error, cuttlefish_error:errorlist()}.
-validate({_, Mappings, _} = Schema, Config, ParsedArgs) ->
-    AliasResolvedConfig = resolve_aliases(Config, Mappings),
-    DConfig = add_defaults(AliasResolvedConfig, Mappings),
+validate({_, Mappings0, Validators} = Schema0, Config, ParsedArgs) ->
+    AliasResolvedConfig = resolve_aliases(Config, Mappings0),
+    DConfig = add_defaults(AliasResolvedConfig, Mappings0),
     %% Separate errors injected by add_defaults from valid config entries so
     %% subsequent phases can still run.
     {DefaultErrors, CleanDConfig} = lists:partition(fun cuttlefish_error:is_error/1, DConfig),
     {SubbedConfig, SubErrors0} = value_sub(CleanDConfig),
-    SubErrors = enrich_alias_sub_errors(SubErrors0, Mappings),
+    SubErrors = enrich_alias_sub_errors(SubErrors0, Mappings0),
     %% transform_datatypes already returns {GoodConf, Errors}; in map/3 the
     %% error path discards GoodConf, but here we use both.
+    Mappings = resolve_constraint_validators_in_mappings(Mappings0, Validators),
+    Schema = setelement(2, Schema0, Mappings),
     {TypedConf, TypeErrors} = transform_datatypes(SubbedConfig, Mappings, ParsedArgs),
     ValidationErrors = case cuttlefish_error:errorlist_maybe(run_validations(Schema, TypedConf)) of
         {errorlist, EList} -> EList;

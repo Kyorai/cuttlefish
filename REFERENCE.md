@@ -337,13 +337,27 @@ Three named aliases cover common ranges:
 - `byte` = `{integer, [{min, 0}, {max, 255}]}`
 - `percent` = `{percent, integer}` (0-100)
 
-For settings that accept the atom `infinity` in addition to a numeric value, compose with the existing datatype-list mechanism — first match wins:
+For settings that accept the atom `infinity` in addition to a numeric value, add `allow_infinity` to the constraint list. Both the atom `infinity` and the string a conf file produces for it parse to the atom `infinity`; other inputs go through the usual numeric pipeline.
+
+```erlang
+{datatype, {integer, [non_negative, allow_infinity]}}
+{datatype, {integer, [{min, 1}, {max, 65535}, allow_infinity]}}
+```
+
+The older datatype-list form continues to work and is equivalent for back-compat purposes:
 
 ```erlang
 {datatype, [{atom, infinity}, {integer, non_negative}]}
 ```
 
-Out-of-range values surface as `{error, {range_violation, {Value, FailedConstraint}}}`.
+A constraint list also accepts validator entries — either by name (looked up in the loaded validator set) or by anonymous function. Constraints fire left-to-right, first failure wins:
+
+```erlang
+{datatype, {integer, [{min, 1}, {max, 65535}, {validator, "power_of_two"}]}}
+{datatype, {integer, [{min, 1}, {validator, fun(N) -> N rem 4 =:= 0 end}]}}
+```
+
+Out-of-range values surface as `{error, {range_violation, {Value, FailedConstraint}}}`. Validator failures surface as `{error, {constraint_validator_failed, Value}}`.
 
 ### `string`
 
@@ -460,6 +474,14 @@ Parses a byte size with optional unit suffix (`KB`, `MB`, `GB`). Case-insensitiv
 object.size.maximum = 50MB
 ```
 
+Bounds are written against the parsed byte count:
+
+```erlang
+{datatype, {bytesize, [{min, 1}, {max, 1073741824}]}}
+{datatype, {bytesize, non_negative}}
+{datatype, {bytesize, [non_negative, allow_infinity]}}
+```
+
 ### `{duration, Unit}`
 
 Parses a duration string (e.g. `5s`, `2h30m`). Erlang type: `integer()` (in the specified unit).
@@ -472,6 +494,13 @@ Units: `ms` (milliseconds), `s` (seconds), `m` (minutes), `h` (hours), `d` (days
 
 ```
 handoff.timeout = 30s
+```
+
+Bounds are expressed in the declared unit:
+
+```erlang
+{datatype, {duration, ms, [{min, 0}, {max, 60000}]}}
+{datatype, {duration, s, [non_negative, allow_infinity]}}
 ```
 
 ### `{percent, integer}` and `{percent, float}`
@@ -584,6 +613,36 @@ Reference validators by name in a mapping's `validators` list:
 ```
 
 The validator function receives the typed value (after datatype conversion). Return `true` to pass, `false` to fail. On failure, cuttlefish reports the validator description as the error message.
+
+### Aliases and deprecation hints
+
+A validator may carry an optional 5th argument: a proplist with `{aliases, [Name]}` and/or `{deprecated, Since, Hint}`. Both are independent.
+
+```erlang
+{validator, "new_name", "must be positive",
+            fun(N) -> N > 0 end,
+            [{aliases, ["old_name"]},
+             {deprecated, "3.9.0", "use {integer, positive} datatype"}]}.
+```
+
+`aliases` lets a renamed validator answer to its old name(s) so call sites can migrate at their own pace. The same alias may not appear on two different validators or shadow another validator's canonical name.
+
+`deprecated` causes cuttlefish to emit a single `warn`-level log line the first time the validator runs in a given load cycle. Repeat uses are silenced. The hint should point the schema author at the replacement form.
+
+### Built-in validators
+
+Cuttlefish ships a small set of built-in validators that delegate to the matching datatype:
+
+| Name | Equivalent |
+|---|---|
+| `"byte"` | `byte` datatype (0..255) |
+| `"port"` | `port` datatype (0..65535) |
+| `"valid_regex"` | `regex` datatype (rejects empty patterns and patterns prone to catastrophic backtracking) |
+| `"uri"` | no-op marker (accepts any string) |
+
+These are injected on demand only when a mapping actually references them. A user-defined validator with the same name wins silently — the local predicate is intentional, and the deprecation hint on the builtin (which fires only when the builtin is what runs) is the channel for nudging the migration. The intent is to let a schema drop its in-tree definition of one of these names without rewriting call sites; the migration to the native datatype form (`{datatype, port}` etc.) is then a separate, gradual cleanup.
+
+`"uri"` is a marker validator by design — it accepts any string, so call sites that historically used a no-op `"uri"` predicate with template-style values (`https://{{node}}/...`) keep working when their local definition is deleted. Use the `uri` datatype when you want structural validation.
 
 ---
 
@@ -739,3 +798,26 @@ Understanding the pipeline helps when debugging unexpected behavior.
 8. **Run translations** - Translation functions produce the final Erlang values. Direct 1:1 mappings (and `{collect, Type}` mappings) are applied here as well.
 
 The output is a `[{AppName, [{Key, Value}]}]` proplist suitable for use as `app.config`.
+
+---
+
+## Diffing Two Pipeline Outputs
+
+When migrating a schema, the safest check is "the generated `app.config` is the same for any valid input". `cuttlefish_diff:render_normalised/1,2` takes the output of `cuttlefish_generator:map/2` and returns a deterministic, sorted, printable form suitable for line-diffing:
+
+```erlang
+{ok, Before} = cuttlefish_generator:map(OldSchemas, Conf),
+{ok, After}  = cuttlefish_generator:map(NewSchemas, Conf),
+A = cuttlefish_diff:render_normalised(Before, [{skip_funs, true}]),
+B = cuttlefish_diff:render_normalised(After,  [{skip_funs, true}]),
+%% feed A and B to your diff tool of choice
+```
+
+Two equivalent configs that differ only by internal key order produce the same string; any real difference shows up as a localised line-level change. The second argument is an options proplist:
+
+| Option | Default | Effect |
+|---|---|---|
+| `{skip_funs, bool}` | `true` | Render every function as the stable placeholder `#Fun<>`. With `false`, use Erlang's `~p` form, which may differ between runs |
+| `{atom_quoting, strict \| loose}` | `loose` | `strict` quotes atoms via `~p` (e.g. `'with-dashes'`); `loose` emits the bare name |
+
+The library function is intended to be called from CI scripts and migration verification harnesses. There is no CLI subcommand in 3.9.0.
