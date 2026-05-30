@@ -17,7 +17,7 @@ This is the repository used to produce [Hex.pm releases](https://hex.pm/packages
 
 ## Supported Erlang/OTP Versions
 
- * Cuttlefish 3.4.0 and later versions support Erlang 25, 26 and 27
+ * Cuttlefish 3.4.0 and later versions support Erlang 26, 27 and 28
  * Cuttlefish 3.2.0 and 3.3.0 support Erlang 25 and 26
  * Cuttlefish 3.1.0 supports Erlang 24 and 25
  * Cuttlefish 2.7.0 through 3.0.0 support Erlang 22 through 24
