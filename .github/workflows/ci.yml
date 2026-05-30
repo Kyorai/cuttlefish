@@ -13,10 +13,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        otp_version: [26, 27, 28]
+        otp_version: [26, 27, 28, 29]
         os: [ubuntu-latest, windows-latest]
     env:
-      LATEST_OTP_RELEASE: 28
+      LATEST_OTP_RELEASE: 29
     steps:
       - uses: actions/checkout@v5
       # GitHub's windows-latest reports ImageOS=win25-vs2026 (same Windows
