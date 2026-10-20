@@ -523,6 +523,29 @@ credential = plain:mypassword
 
 Like `tagged_string` but the value part is returned as a binary. Erlang type: `{atom(), binary()}`.
 
+### `encrypted_string` and `encrypted_binary`
+
+These are specializations of the tagged types covered above.
+
+Parse an `encrypted:<ciphertext>` value. Only the literal `encrypted:` prefix is accepted, so values that contain colons, such as `https://...` or `urn:...`,
+are not mistaken for tagged (encrypted) values.
+
+Erlang types: `{encrypted, string()}` and `{encrypted, binary()}`.
+
+This type can be combined with a plain datatype to accept both
+encrypted and plaintext values but the `encrypted_binary`, `encrypted_string`
+values must come first (the first value to successfully parse will be used):
+
+```erlang
+{datatype, [encrypted_binary, binary]}
+{datatype, [encrypted_string, {uri, [https]}]}
+```
+
+```ini
+default_pass = encrypted:ec3Z4yFBjnzh+7VeDZ+tRoB7LFI2ZnU8H8eyIingNwV8d1q/DQ/cF4rnZXzwgszlLd0ZkEz5WaMZoNa8n50dqA==
+trust_store.url = https://ca.example.com/certs
+```
+
 ### `{list, T}`
 
 Parses a comma-separated list of values, each parsed as datatype `T`. Erlang type: `[T]`. Lists of lists are not supported.

@@ -199,6 +199,8 @@ xlate({regex_excessive_backtracking, Value}) ->
     io_lib:format("~tp is prone to excessive backtracking; "
                   "simplify the pattern or avoid nested or overlapping quantifiers",
                   [Value]);
+xlate({encrypted_value_expected, _}) ->
+    "Value must be prefixed with \"encrypted:\"";
 xlate({uri_empty, _}) ->
     "URI value cannot be empty";
 xlate({uri_malformed, Value}) ->

@@ -51,6 +51,8 @@
                     {float,   [numeric_constraint()] | numeric_shortcut()} |
                     float |
                     tagged_string |
+                    encrypted_string |
+                    encrypted_binary |
                     regex |
                     uri |
                     {uri, [atom()]} |
@@ -138,6 +140,8 @@ is_supported({float, Constraints}) ->
 is_supported(float) -> true;
 is_supported(tagged_string) -> true;
 is_supported(tagged_binary) -> true;
+is_supported(encrypted_string) -> true;
+is_supported(encrypted_binary) -> true;
 is_supported(regex) -> true;
 is_supported(uri) -> true;
 is_supported({uri, Schemes}) when is_list(Schemes), Schemes =/= [] ->
@@ -271,6 +275,12 @@ to_string(Bin, binary) when is_binary(Bin) -> binary_to_list(Bin);
 to_string({Tag, String}, tagged_string) when is_list(Tag), is_list(String) -> Tag ++ ":" ++ String;
 to_string({Tag, String}, tagged_binary) when is_list(Tag), is_list(String) -> Tag ++ ":" ++ String;
 to_string({Tag, Bin}, tagged_binary) when is_list(Tag), is_binary(Bin) -> Tag ++ ":" ++ binary_to_list(Bin);
+
+to_string({encrypted, String}, encrypted_string) when is_list(String) -> "encrypted:" ++ String;
+to_string({encrypted, Bin}, encrypted_binary) when is_binary(Bin) -> "encrypted:" ++ binary_to_list(Bin);
+to_string(String, encrypted_string) when is_list(String) -> String;
+to_string(String, encrypted_binary) when is_list(String) -> String;
+to_string(Bin, encrypted_binary) when is_binary(Bin) -> binary_to_list(Bin);
 
 to_string(Regex, regex) when is_list(Regex) -> Regex;
 
@@ -424,6 +434,15 @@ from_string(String, tagged_binary) when is_list(String) ->
         _ ->
             {error, {conversion, {String, "tagged binary"}}}
     end;
+
+from_string("encrypted:" ++ Value, encrypted_string) when Value =/= [] ->
+    {encrypted, Value};
+from_string("encrypted:" ++ Value, encrypted_binary) when Value =/= [] ->
+    {encrypted, list_to_binary(Value)};
+%% The value is sensitive, keep it out of the "clear" error value.
+from_string(_Value, Type)
+  when Type =:= encrypted_string; Type =:= encrypted_binary ->
+    {error, {encrypted_value_expected, Type}};
 
 from_string({local, UDS, Port}, domain_socket) when is_list(UDS), is_integer(Port) -> {local, UDS, Port};
 from_string(String, domain_socket) when is_list(String) ->

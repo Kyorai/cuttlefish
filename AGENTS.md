@@ -243,7 +243,7 @@ point and returns `{error, {conversion, ...}}` on a parse failure or
 See the **Datatypes** section in `REFERENCE.md` for the full list of
 supported types (`integer`, `string`, `binary`, `atom`, `float`,
 `boolean`, `flag`, `{enum, _}`, `ip`, `fqdn`, `bytesize`, durations,
-percent, tagged types, lists, files, regex, URIs), the numerical range
+percent, tagged types, encrypted values, lists, files, regex, URIs), the numerical range
 constraints (`{min, _}`, `{max, _}`, `{gt, _}`, `{lt, _}`,
 `non_negative`, `positive`), and the named aliases (`port`, `byte`,
 `percent`).
