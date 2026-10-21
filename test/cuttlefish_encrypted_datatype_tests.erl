@@ -315,6 +315,34 @@ non_sensitive_mapping_errors_still_name_the_value_test() ->
     Messages = lists:flatten([?XLATE(E) || E <- Errors]),
     ?assertNotEqual(nomatch, string:find(Messages, "not-a-url")).
 
+%% An encrypted datatype behind a total one is dead code: `binary' and
+%% `string' parse anything, including an `encrypted:...' value, so the
+%% earlier datatype always wins and the ciphertext reaches the application
+%% as though it were the plaintext secret, with no error and no warning.
+%% REFERENCE.md states the ordering rule; this enforces it.
+schema_rejects_an_encrypted_datatype_behind_another_test() ->
+    ?assertMatch({errorlist, [{error, {encrypted_datatype_not_first, _}}]},
+                 cuttlefish_schema:strings(
+                   ["{mapping, \"p\", \"a.p\", [{datatype, [binary, encrypted_binary]}]}."])),
+    ?assertMatch({errorlist, [{error, {encrypted_datatype_not_first, _}}]},
+                 cuttlefish_schema:strings(
+                   ["{mapping, \"u\", \"a.u\", [{datatype, [{uri, [https]}, encrypted_string]}]}."])).
+
+schema_accepts_an_encrypted_datatype_first_test() ->
+    ?assertMatch({_, [_], _},
+                 cuttlefish_schema:strings(
+                   ["{mapping, \"p\", \"a.p\", [{datatype, [encrypted_binary, binary]}]}."])),
+    ?assertMatch({_, [_], _},
+                 cuttlefish_schema:strings(
+                   ["{mapping, \"p\", \"a.p\", [{datatype, encrypted_binary}]}."])).
+
+%% The rule applies only to mappings that declare an encrypted datatype.
+%% Ordering among other datatypes is unconstrained, as it always was.
+schema_does_not_constrain_order_without_an_encrypted_datatype_test() ->
+    ?assertMatch({_, [_], _},
+                 cuttlefish_schema:strings(
+                   ["{mapping, \"p\", \"a.p\", [{datatype, [string, integer]}]}."])).
+
 pretty_datatype_test() ->
     ?assertEqual("an encrypted value, e.g. encrypted:<ciphertext>",
                  cuttlefish_conf:pretty_datatype(encrypted_binary)).
