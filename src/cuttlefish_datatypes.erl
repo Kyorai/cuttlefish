@@ -319,6 +319,26 @@ to_string(Value, MaybeExtendedDatatype) ->
             {error, {type, {Value, MaybeExtendedDatatype}}}
     end.
 
+%% A prefix with nothing usable after it is a different fault from a value
+%% carrying no prefix at all, so it gets its own error: advising the operator
+%% to add a prefix they have already written sends them to the wrong place.
+%% Whitespace counts as nothing usable. A bare conf value is trimmed by the
+%% parser, but a quoted one is not, so `p = 'encrypted:   '' would otherwise
+%% hand the application three spaces as though they were ciphertext.
+-spec encrypted_value(string() | binary(), datatype()) ->
+    {'encrypted', string() | binary()} | cuttlefish_error:error().
+encrypted_value(Ciphertext, Type) ->
+    case is_blank(Ciphertext) of
+        true  -> {error, {encrypted_value_empty, Type}};
+        false -> {encrypted, Ciphertext}
+    end.
+
+-spec is_blank(string() | binary()) -> boolean().
+is_blank(Ciphertext) when is_binary(Ciphertext) ->
+    string:trim(Ciphertext) =:= <<>>;
+is_blank(Ciphertext) when is_list(Ciphertext) ->
+    string:trim(Ciphertext) =:= "".
+
 %% @doc True for datatypes whose values may be secrets, so that callers
 %% reporting a rejected value know to withhold it. A `{list, _}' of a
 %% sensitive datatype is sensitive too.
@@ -462,17 +482,17 @@ from_string(String, tagged_binary) when is_list(String) ->
 %% `cuttlefish_generator:add_defaults/2') and are converted along with
 %% everything else, so an already-converted value has to pass through
 %% unchanged, as it does for ip, integer, domain_socket and the rest.
-from_string({encrypted, Value}, encrypted_string) when is_list(Value), Value =/= [] ->
-    {encrypted, Value};
-from_string({encrypted, Value}, encrypted_binary) when is_binary(Value), Value =/= <<>> ->
-    {encrypted, Value};
-from_string({encrypted, Value}, encrypted_binary) when is_list(Value), Value =/= [] ->
-    {encrypted, list_to_binary(Value)};
+from_string({encrypted, Value}, encrypted_string) when is_list(Value) ->
+    encrypted_value(Value, encrypted_string);
+from_string({encrypted, Value}, encrypted_binary) when is_binary(Value) ->
+    encrypted_value(Value, encrypted_binary);
+from_string({encrypted, Value}, encrypted_binary) when is_list(Value) ->
+    encrypted_value(list_to_binary(Value), encrypted_binary);
 
-from_string("encrypted:" ++ Value, encrypted_string) when Value =/= [] ->
-    {encrypted, Value};
-from_string("encrypted:" ++ Value, encrypted_binary) when Value =/= [] ->
-    {encrypted, list_to_binary(Value)};
+from_string("encrypted:" ++ Value, encrypted_string) ->
+    encrypted_value(Value, encrypted_string);
+from_string("encrypted:" ++ Value, encrypted_binary) ->
+    encrypted_value(list_to_binary(Value), encrypted_binary);
 %% The value is sensitive, keep it out of the "clear" error value.
 from_string(_Value, Type)
   when Type =:= encrypted_string; Type =:= encrypted_binary ->

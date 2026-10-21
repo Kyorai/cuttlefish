@@ -602,9 +602,11 @@ redact_if_sensitive(Datatypes, VarName, Errors) ->
             end
     end.
 
-%% Errors whose rendered message and term cannot contain the rejected value.
+%% Errors whose rendered message and term cannot contain the rejected value:
+%% both carry only the datatype, and both messages are constants.
 -spec value_free_error(cuttlefish_error:error()) -> boolean().
 value_free_error({error, {encrypted_value_expected, _}}) -> true;
+value_free_error({error, {encrypted_value_empty, _}}) -> true;
 value_free_error(_) -> false.
 
 -spec value_sub(cuttlefish_conf:conf()) -> {cuttlefish_conf:conf(), [cuttlefish_error:error()]}.

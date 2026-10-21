@@ -318,6 +318,15 @@ whitespace_only_ciphertext_is_rejected_through_the_pipeline_test() ->
     ?assertMatch({error, transform_datatypes, _},
                  generate(["auth_ldap.dn_lookup_bind.password = 'encrypted:   '"])).
 
+%% The redaction in `redact_if_sensitive/3' elides any error not known to be
+%% value-free, so a new error atom reaches the operator as the generic
+%% summary unless it is listed. Assert the accurate message survives.
+blank_ciphertext_message_survives_redaction_test() ->
+    {error, transform_datatypes, {errorlist, Errors}} =
+        generate(["auth_ldap.dn_lookup_bind.password = encrypted:"]),
+    Messages = lists:flatten([?XLATE(E) || E <- Errors]),
+    ?assertNotEqual(nomatch, string:find(Messages, "the ciphertext after it is empty")).
+
 %% Every datatype in a mapping's list contributes an error when the value is
 %% rejected, so redacting only the encrypted error is not enough: the sibling
 %% `{uri, _}' reports the value it rejected. Nothing about a setting that may

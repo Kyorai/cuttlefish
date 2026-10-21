@@ -201,6 +201,8 @@ xlate({regex_excessive_backtracking, Value}) ->
                   [Value]);
 xlate({encrypted_value_expected, _}) ->
     "Value must be prefixed with \"encrypted:\"";
+xlate({encrypted_value_empty, _}) ->
+    "Value is prefixed with \"encrypted:\" but the ciphertext after it is empty";
 xlate({validator_unknown_error, {Variable, {Class, Error}}}) ->
     io_lib:format("Error running validator for ~ts, [~tp, ~tp]",
                   [Variable, Class, Error]);
