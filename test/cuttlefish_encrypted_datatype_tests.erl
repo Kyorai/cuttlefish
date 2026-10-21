@@ -79,12 +79,7 @@ encrypted_types_reject_non_list_values_test() ->
      || Type <- [encrypted_string, encrypted_binary],
         Value <- [list_to_binary(V) || V <- ?PLAINTEXT_VALUES]].
 
-encrypted_value_expected_error_omits_non_list_value_test() ->
-    Error = cuttlefish_datatypes:from_string(<<"urn:amazon:cognito:sp:eu-west-1_Ab12CdEfG">>,
-                                             encrypted_binary),
-    ?assertEqual(nomatch, string:find(?XLATE(Error), "cognito")).
-
-encrypted_value_expected_error_omits_the_value_test() ->
+encrypted_value_expected_message_is_actionable_test() ->
     Error = cuttlefish_datatypes:from_string("hunter2:x", encrypted_binary),
     ?assertEqual("Value must be prefixed with \"encrypted:\"", ?XLATE(Error)).
 
@@ -292,6 +287,33 @@ encrypted_only_mapping_rejects_plaintext_test() ->
     Messages = lists:flatten([?XLATE(E) || E <- Errors]),
     ?assertNotEqual(nomatch, string:find(Messages, "prefixed with \"encrypted:\"")),
     ?assertEqual(nomatch, string:find(Messages, "Pa55w0rd-rabbitmq")).
+
+%% Every datatype in a mapping's list contributes an error when the value is
+%% rejected, so redacting only the encrypted error is not enough: the sibling
+%% `{uri, _}' reports the value it rejected. Nothing about a setting that may
+%% hold a secret may carry the value, in the error terms or in the rendered
+%% messages.
+sensitive_mapping_errors_never_contain_the_value_test() ->
+    Secret = "hunter2-TOPSECRET",
+    {error, transform_datatypes, {errorlist, Errors}} =
+        generate(["trust_store.url = " ++ Secret]),
+    Terms = lists:flatten(io_lib:format("~p", [Errors])),
+    ?assertEqual(nomatch, string:find(Terms, Secret)),
+    Messages = lists:flatten([?XLATE(E) || E <- Errors]),
+    ?assertEqual(nomatch, string:find(Messages, Secret)),
+    %% The operator still has to be told which setting was rejected.
+    ?assertNotEqual(nomatch, string:find(Messages, "trust_store.url")).
+
+%% The redaction is scoped to mappings that may hold a secret. A mapping with
+%% no encrypted datatype keeps its specific, value-bearing diagnostic.
+non_sensitive_mapping_errors_still_name_the_value_test() ->
+    Config = cuttlefish_unit:generate_config(
+               strings,
+               ["{mapping, \"plain.url\", \"a.url\", [{datatype, {uri, [https]}}]}."],
+               [{["plain", "url"], "not-a-url"}]),
+    {error, transform_datatypes, {errorlist, Errors}} = Config,
+    Messages = lists:flatten([?XLATE(E) || E <- Errors]),
+    ?assertNotEqual(nomatch, string:find(Messages, "not-a-url")).
 
 pretty_datatype_test() ->
     ?assertEqual("an encrypted value, e.g. encrypted:<ciphertext>",
