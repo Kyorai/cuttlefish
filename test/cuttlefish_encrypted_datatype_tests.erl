@@ -336,6 +336,21 @@ schema_accepts_an_encrypted_datatype_first_test() ->
                  cuttlefish_schema:strings(
                    ["{mapping, \"p\", \"a.p\", [{datatype, encrypted_binary}]}."])).
 
+%% Consecutive encrypted datatypes leak nothing: whichever parses first
+%% wins and both withhold their value. The rule is that no other datatype
+%% may precede an encrypted one, not that exactly one may be first.
+schema_accepts_consecutive_encrypted_datatypes_test() ->
+    ?assertMatch({_, [_], _},
+                 cuttlefish_schema:strings(
+                   ["{mapping, \"p\", \"a.p\", [
+                         {datatype, [encrypted_string, encrypted_binary]}
+                     ]}."])),
+    ?assertMatch({_, [_], _},
+                 cuttlefish_schema:strings(
+                   ["{mapping, \"p\", \"a.p\", [
+                         {datatype, [encrypted_string, encrypted_binary, binary]}
+                     ]}."])).
+
 %% The rule applies only to mappings that declare an encrypted datatype.
 %% Ordering among other datatypes is unconstrained, as it always was.
 schema_does_not_constrain_order_without_an_encrypted_datatype_test() ->

@@ -133,7 +133,11 @@ filter({Translations, Mappings, Validators0}) ->
             case validate_validator_aliases(Validators) of
                 ok ->
                     case validate_validator_refs(NewMappings, Validators) of
-                        ok -> {Translations, NewMappings, Validators};
+                        ok ->
+                            case validate_encrypted_datatype_order(NewMappings) of
+                                ok -> {Translations, NewMappings, Validators};
+                                {errorlist, _} = Errors -> Errors
+                            end;
                         {errorlist, _} = Errors -> Errors
                     end;
                 {errorlist, _} = Errors -> Errors
@@ -355,6 +359,32 @@ collect_alias_collision_errors([{Alias, OwnerVar} | Rest], CanonicalVarSet, Erro
             end
     end,
     collect_alias_collision_errors(Rest, CanonicalVarSet, NewErrors).
+
+%% A datatype that accepts anything, such as `binary' or `string', parses an
+%% `encrypted:...' value too, so an encrypted datatype placed behind one is
+%% never reached: `foldm_either/3' stops at the first success. The ciphertext
+%% then reaches the application as though it were the secret itself, silently.
+%% Require the encrypted datatype to come first rather than trust the schema
+%% author to remember.
+-spec validate_encrypted_datatype_order([cuttlefish_mapping:mapping()]) ->
+    ok | cuttlefish_error:errorlist().
+validate_encrypted_datatype_order(Mappings) ->
+    case [ cuttlefish_variable:format(cuttlefish_mapping:variable(M))
+           || M <- Mappings,
+              encrypted_datatype_is_not_first(cuttlefish_mapping:datatype(M)) ] of
+        [] ->
+            ok;
+        Offenders ->
+            {errorlist, [ {error, {encrypted_datatype_not_first, V}} || V <- Offenders ]}
+    end.
+
+%% Drop the leading run of sensitive datatypes; a sensitive one left in the
+%% tail is one some other datatype precedes, and so can never be reached.
+%% Several sensitive datatypes in a row are fine, which is why this is not
+%% simply a check on the head of the list.
+encrypted_datatype_is_not_first(Datatypes) ->
+    IsSensitive = fun cuttlefish_datatypes:is_sensitive/1,
+    lists:any(IsSensitive, lists:dropwhile(IsSensitive, Datatypes)).
 
 count_mappings(Mappings) ->
     lists:foldl(

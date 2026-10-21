@@ -201,6 +201,10 @@ xlate({regex_excessive_backtracking, Value}) ->
                   [Value]);
 xlate({encrypted_value_expected, _}) ->
     "Value must be prefixed with \"encrypted:\"";
+xlate({encrypted_datatype_not_first, Variable}) ->
+    ["The encrypted datatype for ", Variable, " must come before the other "
+     "datatypes it is combined with, otherwise an \"encrypted:\" value is "
+     "accepted as plaintext by the datatype listed ahead of it"];
 xlate({sensitive_value_rejected, Variable}) ->
     ["Value for ", Variable, " was rejected by every datatype configured for "
      "it; the value is not shown because this setting may hold a secret"];
