@@ -527,14 +527,11 @@ Like `tagged_string` but the value part is returned as a binary. Erlang type: `{
 
 These are specializations of the tagged types covered above.
 
-Parse an `encrypted:<ciphertext>` value. Only the literal `encrypted:` prefix is accepted, so values that contain colons, such as `https://...` or `urn:...`,
-are not mistaken for tagged (encrypted) values.
+Parses an `encrypted:<ciphertext>` value. Only the literal `encrypted:` prefix is recognised as a tag. A generic `tagged_string` reads `https://ca.example.com/certs` as the tag `https` with the value `//ca.example.com/certs`, because it splits at the first colon; these types do not, so a URL, a URN or any other value containing a colon is left alone unless it actually starts with `encrypted:`.
 
-Erlang types: `{encrypted, string()}` and `{encrypted, binary()}`.
+Erlang types: `{encrypted, string()}` and `{encrypted, binary()}`. The ciphertext is not itself validated, since cuttlefish does not know the cipher; it is passed through verbatim for the application to decrypt. A prefix with an empty or whitespace-only ciphertext after it is rejected.
 
-This type can be combined with a plain datatype to accept both
-encrypted and plaintext values but the `encrypted_binary`, `encrypted_string`
-values must come first (the first value to successfully parse will be used):
+Either type can be combined with a plaintext datatype to accept both encrypted and plaintext values. The encrypted datatype must come first, and a schema that orders them the other way is rejected at load time: a datatype such as `binary` or `string` parses anything, including an `encrypted:...` value, so it would consume the ciphertext and hand it to the application as though it were the plaintext secret.
 
 ```erlang
 {datatype, [encrypted_binary, binary]}
@@ -545,6 +542,10 @@ values must come first (the first value to successfully parse will be used):
 default_pass = encrypted:ec3Z4yFBjnzh+7VeDZ+tRoB7LFI2ZnU8H8eyIingNwV8d1q/DQ/cF4rnZXzwgszlLd0ZkEz5WaMZoNa8n50dqA==
 trust_store.url = https://ca.example.com/certs
 ```
+
+In the combined form the value reaching the application has one of two shapes: `{encrypted, _}` when the `encrypted:` prefix was present, and the bare `string()` or `binary()` of the other datatype when it was not. Translations and validators for such a mapping have to handle both.
+
+When a value for a mapping that declares an encrypted datatype is rejected, cuttlefish does not print it, because the setting may hold a secret. Errors that would name the value are replaced by a single message naming only the setting.
 
 ### `{list, T}`
 
