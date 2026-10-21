@@ -358,6 +358,41 @@ schema_does_not_constrain_order_without_an_encrypted_datatype_test() ->
                  cuttlefish_schema:strings(
                    ["{mapping, \"p\", \"a.p\", [{datatype, [string, integer]}]}."])).
 
+-define(CRASHING_VALIDATOR_SCHEMA,
+        "{validator, \"non_empty\", \"must be non-empty\","
+        "  fun(B) -> byte_size(B) > 0 end}.\n"
+        "{mapping, \"p\", \"a.p\","
+        "  [{datatype, [encrypted_binary, binary]},"
+        "   {validators, [\"non_empty\"]}]}.\n").
+
+%% Combining an encrypted datatype with a plaintext one changes the shape a
+%% validator sees: `{encrypted, Bin}' rather than a bare binary. A validator
+%% written for the plaintext shape then raises, and unlike a translation it
+%% is applied with no try/catch, so the exception escapes `map_validate/2'
+%% and takes the escript down with exit 127 and no cuttlefish error at all.
+crashing_validator_is_reported_not_raised_test() ->
+    Config = cuttlefish_unit:generate_config(
+               strings, [?CRASHING_VALIDATOR_SCHEMA], [{["p"], "encrypted:CIPHERTEXT"}]),
+    cuttlefish_unit:assert_error(Config),
+    {errorlist, Errors} = element(3, Config),
+    Messages = lists:flatten([?XLATE(E) || E <- Errors]),
+    ?assertNotEqual(nomatch, string:find(Messages, "p")).
+
+%% A validator that returns false still reports the ordinary validation
+%% error, and one that passes still passes. Wrapping the call must not turn
+%% either into an exception report.
+working_validators_are_unaffected_test() ->
+    Schema = "{validator, \"non_empty\", \"must be non-empty\","
+             "  fun(B) -> byte_size(B) > 0 end}.\n"
+             "{mapping, \"p\", \"a.p\","
+             "  [{datatype, binary}, {validators, [\"non_empty\"]}]}.\n",
+    cuttlefish_unit:assert_config(
+      cuttlefish_unit:generate_config(strings, [Schema], [{["p"], "ok"}]),
+      "a.p", <<"ok">>),
+    cuttlefish_unit:assert_error_message(
+      cuttlefish_unit:generate_config(strings, [Schema], [{["p"], ""}]),
+      "p invalid, must be non-empty").
+
 pretty_datatype_test() ->
     ?assertEqual("an encrypted value, e.g. encrypted:<ciphertext>",
                  cuttlefish_conf:pretty_datatype(encrypted_binary)).
