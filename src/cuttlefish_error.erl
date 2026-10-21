@@ -201,6 +201,9 @@ xlate({regex_excessive_backtracking, Value}) ->
                   [Value]);
 xlate({encrypted_value_expected, _}) ->
     "Value must be prefixed with \"encrypted:\"";
+xlate({sensitive_value_rejected, Variable}) ->
+    ["Value for ", Variable, " was rejected by every datatype configured for "
+     "it; the value is not shown because this setting may hold a secret"];
 xlate({uri_empty, _}) ->
     "URI value cannot be empty";
 xlate({uri_malformed, Value}) ->

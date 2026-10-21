@@ -95,6 +95,7 @@
          from_string/2,
          to_string/2,
          datatype_for_value/2,
+         is_sensitive/1,
          extended_from/1,
          constraint_validator_refs/1,
          resolve_constraint_validators/2
@@ -317,6 +318,15 @@ to_string(Value, MaybeExtendedDatatype) ->
         _ ->
             {error, {type, {Value, MaybeExtendedDatatype}}}
     end.
+
+%% @doc True for datatypes whose values may be secrets, so that callers
+%% reporting a rejected value know to withhold it. A `{list, _}' of a
+%% sensitive datatype is sensitive too.
+-spec is_sensitive(any()) -> boolean().
+is_sensitive(encrypted_string) -> true;
+is_sensitive(encrypted_binary) -> true;
+is_sensitive({list, Datatype}) -> is_sensitive(Datatype);
+is_sensitive(_) -> false.
 
 %% @doc Returns the first datatype in the list that can render Value as a
 %% string. A mapping declaring several datatypes may hold a value belonging

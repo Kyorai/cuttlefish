@@ -572,14 +572,40 @@ transform_datatypes(Conf, Mappings, ParsedArgs) ->
                         {ok, NewValue} ->
                             {[{Variable, NewValue}|Acc], ErrorAcc};
                         {errorlist, EList} ->
-                            NewError = {transform_type,
-                                        cuttlefish_variable:format(Variable)},
-                            {Acc, [{error, NewError}] ++ EList ++ ErrorAcc}
+                            VarName = cuttlefish_variable:format(Variable),
+                            {Acc, [{error, {transform_type, VarName}}]
+                                  ++ redact_if_sensitive(DTs, VarName, EList)
+                                  ++ ErrorAcc}
                     end
             end
         end,
         {[], []},
         Conf).
+
+%% Each declared datatype contributes its own error, and only the encrypted
+%% ones withhold the value they rejected. One sibling that reports the value
+%% is enough to put a secret in the log, so for a mapping that may hold one
+%% we keep only the errors known to carry no value and replace the rest with
+%% a summary that names none. This fails closed: an error atom not listed in
+%% `value_free_error/1' is elided even if it would have been harmless.
+-spec redact_if_sensitive(cuttlefish_datatypes:datatype_list(),
+                          string(),
+                          [cuttlefish_error:error()]) -> [cuttlefish_error:error()].
+redact_if_sensitive(Datatypes, VarName, Errors) ->
+    case lists:any(fun cuttlefish_datatypes:is_sensitive/1, Datatypes) of
+        false ->
+            Errors;
+        true ->
+            case lists:partition(fun value_free_error/1, Errors) of
+                {Kept, []}      -> Kept;
+                {Kept, _Elided} -> Kept ++ [{error, {sensitive_value_rejected, VarName}}]
+            end
+    end.
+
+%% Errors whose rendered message and term cannot contain the rejected value.
+-spec value_free_error(cuttlefish_error:error()) -> boolean().
+value_free_error({error, {encrypted_value_expected, _}}) -> true;
+value_free_error(_) -> false.
 
 -spec value_sub(cuttlefish_conf:conf()) -> {cuttlefish_conf:conf(), [cuttlefish_error:error()]}.
 value_sub(Conf) ->
