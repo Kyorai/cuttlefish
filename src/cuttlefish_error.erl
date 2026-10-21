@@ -201,6 +201,12 @@ xlate({regex_excessive_backtracking, Value}) ->
                   [Value]);
 xlate({encrypted_value_expected, _}) ->
     "Value must be prefixed with \"encrypted:\"";
+xlate({validator_unknown_error, {Variable, {Class, Error}}}) ->
+    io_lib:format("Error running validator for ~ts, [~tp, ~tp]",
+                  [Variable, Class, Error]);
+xlate({validator_raised_on_sensitive_value, Variable}) ->
+    ["The validator for ", Variable, " raised an exception; the details are "
+     "not shown because this setting may hold a secret"];
 xlate({encrypted_datatype_not_first, Variable}) ->
     ["The encrypted datatype for ", Variable, " must come before the other "
      "datatypes it is combined with, otherwise an \"encrypted:\" value is "
