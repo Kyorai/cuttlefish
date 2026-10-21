@@ -96,8 +96,7 @@ encrypted_types_to_string_test() ->
                  cuttlefish_datatypes:to_string({encrypted, list_to_binary(?PASSWORD_CIPHERTEXT)},
                                                 encrypted_binary)).
 
-generated_conf_renders_a_plaintext_default_test() ->
-    {_, Mappings, _} = cuttlefish_schema:strings(["
+-define(PLAINTEXT_DEFAULT_SCHEMA, "
 {mapping, \"default_pass\", \"rabbit.default_pass\", [
     {datatype, [encrypted_binary, binary]},
     {default, <<\"guest\">>}
@@ -106,12 +105,86 @@ generated_conf_renders_a_plaintext_default_test() ->
     {datatype, [encrypted_string, {uri, [https]}]},
     {default, \"https://definitions.example.com/rabbitmq.json\"}
 ]}.
-"]),
+").
+
+generated_conf_renders_a_plaintext_default_test() ->
+    {_, Mappings, _} = cuttlefish_schema:strings([?PLAINTEXT_DEFAULT_SCHEMA]),
     Lines = cuttlefish_conf:generate(Mappings),
     ?assert(lists:member("default_pass = guest", Lines)),
     ?assert(lists:member("definitions.https.url = https://definitions.example.com/rabbitmq.json",
                          Lines)),
     ?assert(lists:member("## Default: guest", Lines)).
+
+%% The schema above is the combination REFERENCE.md documents. Rendering it
+%% into a .conf file is only half the contract: the same defaults have to
+%% survive the pipeline, or `generate' writes a file cuttlefish then refuses
+%% to read.
+plaintext_defaults_also_survive_the_pipeline_test() ->
+    Config = cuttlefish_unit:generate_config(
+               strings, [?PLAINTEXT_DEFAULT_SCHEMA], []),
+    cuttlefish_unit:assert_config(Config, "rabbit.default_pass", <<"guest">>),
+    cuttlefish_unit:assert_config(Config, "rabbit.definitions_url",
+                                 "https://definitions.example.com/rabbitmq.json").
+
+%% A default already in its native form has to pass back through unchanged,
+%% because `add_defaults/2' injects defaults as raw terms and
+%% `transform_datatypes/3' then runs over them. Every other non-string
+%% datatype (ip, integer, domain_socket, ...) has such a clause.
+encrypted_native_default_is_accepted_test() ->
+    Config = cuttlefish_unit:generate_config(
+               strings,
+               ["{mapping, \"p\", \"a.p\", [
+                     {datatype, encrypted_binary},
+                     {default, {encrypted, <<\"CIPHERTEXT\">>}}
+                 ]}."],
+               []),
+    cuttlefish_unit:assert_config(Config, "a.p", {encrypted, <<"CIPHERTEXT">>}),
+    StringConfig = cuttlefish_unit:generate_config(
+                     strings,
+                     ["{mapping, \"p\", \"a.p\", [
+                           {datatype, encrypted_string},
+                           {default, {encrypted, \"CIPHERTEXT\"}}
+                       ]}."],
+                     []),
+    cuttlefish_unit:assert_config(StringConfig, "a.p", {encrypted, "CIPHERTEXT"}).
+
+%% A default has to be rendered by the datatype that accepts it, not by the
+%% head of the datatype list. Here the binary default belongs to the second
+%% datatype.
+generated_conf_renders_a_default_owned_by_a_later_datatype_test() ->
+    {_, Mappings, _} = cuttlefish_schema:strings(
+                         ["{mapping, \"u\", \"a.u\", [
+                               {datatype, [encrypted_string, {uri, [https]}]},
+                               {default, <<\"https://x/y\">>}
+                           ]}."]),
+    Lines = cuttlefish_conf:generate(Mappings),
+    ?assert(lists:member("u = https://x/y", Lines)),
+    ?assert(lists:member("## Default: https://x/y", Lines)).
+
+%% Same defect reached through `commented' rather than `default'.
+generated_conf_renders_a_commented_value_owned_by_a_later_datatype_test() ->
+    {_, Mappings, _} = cuttlefish_schema:strings(
+                         ["{mapping, \"u\", \"a.u\", [
+                               {datatype, [encrypted_string, {uri, [https]}]},
+                               {commented, <<\"https://x/y\">>}
+                           ]}."]),
+    ?assert(lists:member("## u = https://x/y", cuttlefish_conf:generate(Mappings))).
+
+%% An encrypted-only mapping whose default is plaintext is a schema bug. The
+%% one thing `generate' must not do is emit a setting line that cuttlefish
+%% then rejects when it reads the file back.
+encrypted_only_mapping_with_a_plaintext_default_emits_no_setting_test() ->
+    ok = cuttlefish_test_logging:set_up(),
+    ok = cuttlefish_test_logging:bounce(warning),
+    {_, Mappings, _} = cuttlefish_schema:strings(
+                         ["{mapping, \"p\", \"a.p\", [
+                               {datatype, encrypted_binary},
+                               {default, \"guest\"}
+                           ]}."]),
+    Rendered = lists:flatten(cuttlefish_conf:generate(Mappings)),
+    ?assertEqual(nomatch, string:find(Rendered, "p = guest")),
+    Logs = lists:flatten(cuttlefish_test_logging:get_logs()),
+    ?assertNotEqual(nomatch, string:find(Logs, "none of its datatypes")).
 
 encrypted_types_are_supported_test() ->
     ?assert(cuttlefish_datatypes:is_supported(encrypted_string)),
