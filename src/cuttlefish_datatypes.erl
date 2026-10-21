@@ -94,6 +94,7 @@
          is_valid_list/1,
          from_string/2,
          to_string/2,
+         datatype_for_value/2,
          extended_from/1,
          constraint_validator_refs/1,
          resolve_constraint_validators/2
@@ -277,10 +278,8 @@ to_string({Tag, String}, tagged_binary) when is_list(Tag), is_list(String) -> Ta
 to_string({Tag, Bin}, tagged_binary) when is_list(Tag), is_binary(Bin) -> Tag ++ ":" ++ binary_to_list(Bin);
 
 to_string({encrypted, String}, encrypted_string) when is_list(String) -> "encrypted:" ++ String;
+to_string({encrypted, String}, encrypted_binary) when is_list(String) -> "encrypted:" ++ String;
 to_string({encrypted, Bin}, encrypted_binary) when is_binary(Bin) -> "encrypted:" ++ binary_to_list(Bin);
-to_string(String, encrypted_string) when is_list(String) -> String;
-to_string(String, encrypted_binary) when is_list(String) -> String;
-to_string(Bin, encrypted_binary) when is_binary(Bin) -> binary_to_list(Bin);
 
 to_string(Regex, regex) when is_list(Regex) -> Regex;
 
@@ -319,6 +318,19 @@ to_string(Value, MaybeExtendedDatatype) ->
             {error, {type, {Value, MaybeExtendedDatatype}}}
     end.
 
+%% @doc Returns the first datatype in the list that can render Value as a
+%% string. A mapping declaring several datatypes may hold a value belonging
+%% to any one of them, so callers that need to print a value cannot assume
+%% the head of the list owns it.
+-spec datatype_for_value(term(), datatype_list()) -> {ok, datatype() | extended()} | error.
+datatype_for_value(_Value, []) ->
+    error;
+datatype_for_value(Value, [Datatype|Rest]) ->
+    case to_string(Value, Datatype) of
+        {error, _} -> datatype_for_value(Value, Rest);
+        _String    -> {ok, Datatype}
+    end.
+
 -define(TAGGED_VALUE_PREFIX_REGEX, <<"^[a-zA-Z0-9_]+\:">>).
 
 -define(DEFAULT_URI_SCHEMES, [http, https]).
@@ -347,6 +359,7 @@ from_string("false", boolean) -> false;
 from_string(Value, boolean) when is_list(Value); is_atom(Value) ->
     {error, {conversion, {Value, boolean}}};
 
+from_string(Bin, binary) when is_binary(Bin) -> Bin;
 from_string(String, binary) when is_list(String) -> list_to_binary(String);
 
 from_string(Value, {enum, Enum}) ->
@@ -434,6 +447,17 @@ from_string(String, tagged_binary) when is_list(String) ->
         _ ->
             {error, {conversion, {String, "tagged binary"}}}
     end;
+
+%% Schema defaults enter the conf as raw terms (see
+%% `cuttlefish_generator:add_defaults/2') and are converted along with
+%% everything else, so an already-converted value has to pass through
+%% unchanged, as it does for ip, integer, domain_socket and the rest.
+from_string({encrypted, Value}, encrypted_string) when is_list(Value), Value =/= [] ->
+    {encrypted, Value};
+from_string({encrypted, Value}, encrypted_binary) when is_binary(Value), Value =/= <<>> ->
+    {encrypted, Value};
+from_string({encrypted, Value}, encrypted_binary) when is_list(Value), Value =/= [] ->
+    {encrypted, list_to_binary(Value)};
 
 from_string("encrypted:" ++ Value, encrypted_string) when Value =/= [] ->
     {encrypted, Value};

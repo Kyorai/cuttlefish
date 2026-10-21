@@ -148,27 +148,52 @@ encrypted_native_default_is_accepted_test() ->
                      []),
     cuttlefish_unit:assert_config(StringConfig, "a.p", {encrypted, "CIPHERTEXT"}).
 
+%% An empty ciphertext is rejected in the native form too, the same as the
+%% string form `"encrypted:"' is.
+encrypted_native_default_rejects_an_empty_ciphertext_test() ->
+    ?assertEqual({error, {encrypted_value_expected, encrypted_string}},
+                 cuttlefish_datatypes:from_string({encrypted, ""}, encrypted_string)),
+    ?assertEqual({error, {encrypted_value_expected, encrypted_binary}},
+                 cuttlefish_datatypes:from_string({encrypted, <<>>}, encrypted_binary)),
+    ?assertEqual({error, {encrypted_value_expected, encrypted_binary}},
+                 cuttlefish_datatypes:from_string({encrypted, ""}, encrypted_binary)).
+
 %% A default has to be rendered by the datatype that accepts it, not by the
-%% head of the datatype list. Here the binary default belongs to the second
-%% datatype.
+%% head of the datatype list. `encrypted_string' cannot render a bare string,
+%% so the `{uri, _}' behind it owns this value.
 generated_conf_renders_a_default_owned_by_a_later_datatype_test() ->
     {_, Mappings, _} = cuttlefish_schema:strings(
                          ["{mapping, \"u\", \"a.u\", [
                                {datatype, [encrypted_string, {uri, [https]}]},
-                               {default, <<\"https://x/y\">>}
+                               {default, \"https://x/y\"}
                            ]}."]),
     Lines = cuttlefish_conf:generate(Mappings),
     ?assert(lists:member("u = https://x/y", Lines)),
     ?assert(lists:member("## Default: https://x/y", Lines)).
 
-%% Same defect reached through `commented' rather than `default'.
+%% Same selection, reached through `commented' rather than `default'.
 generated_conf_renders_a_commented_value_owned_by_a_later_datatype_test() ->
+    {_, Mappings, _} = cuttlefish_schema:strings(
+                         ["{mapping, \"u\", \"a.u\", [
+                               {datatype, [encrypted_string, {uri, [https]}]},
+                               {commented, \"https://x/y\"}
+                           ]}."]),
+    ?assert(lists:member("## u = https://x/y", cuttlefish_conf:generate(Mappings))).
+
+%% `{uri, _}' accepts only strings, so no datatype here can render a binary.
+%% Rendering it anyway is what produced the `badarg' crash in `generate/1'.
+generated_conf_omits_a_commented_value_no_datatype_can_render_test() ->
+    ok = cuttlefish_test_logging:set_up(),
+    ok = cuttlefish_test_logging:bounce(warning),
     {_, Mappings, _} = cuttlefish_schema:strings(
                          ["{mapping, \"u\", \"a.u\", [
                                {datatype, [encrypted_string, {uri, [https]}]},
                                {commented, <<\"https://x/y\">>}
                            ]}."]),
-    ?assert(lists:member("## u = https://x/y", cuttlefish_conf:generate(Mappings))).
+    Rendered = lists:flatten(cuttlefish_conf:generate(Mappings)),
+    ?assertEqual(nomatch, string:find(Rendered, "u = ")),
+    Logs = lists:flatten(cuttlefish_test_logging:get_logs()),
+    ?assertNotEqual(nomatch, string:find(Logs, "none of its datatypes")).
 
 %% An encrypted-only mapping whose default is plaintext is a schema bug. The
 %% one thing `generate' must not do is emit a setting line that cuttlefish

@@ -158,7 +158,7 @@ generate_element(MappingRecord) ->
     Level = cuttlefish_mapping:level(MappingRecord),
     Hidden = cuttlefish_mapping:hidden(MappingRecord),
     IncDef = cuttlefish_mapping:include_default(MappingRecord),
-    [Datatype|_] = cuttlefish_mapping:datatype(MappingRecord),
+    Datatypes = cuttlefish_mapping:datatype(MappingRecord),
     %% level != basic OR hidden == true: leave out of generated .conf file
     %% commented $val: insert into .conf file, but commented out with $val
     %% include_default $val:  substitute '$name' or whatever in the key for $val
@@ -177,11 +177,25 @@ generate_element(MappingRecord) ->
         no ->
             [];
         commented ->
-            Comments = generate_comments(MappingRecord),
-            Comments ++ [lists:flatten([ "## ", Field, " = ", cuttlefish_datatypes:to_string(Commented, Datatype) ]), ""];
+            render_element(MappingRecord, Field, "## " ++ Field, Commented, Datatypes);
         default ->
+            render_element(MappingRecord, Field, Field, Default, Datatypes)
+    end.
+
+%% Renders one setting line, using whichever of the mapping's datatypes
+%% accepts the value. A value no declared datatype can render means the
+%% schema is wrong; emitting the line anyway would produce a .conf file
+%% cuttlefish rejects when it reads it back, so skip the setting and say so.
+render_element(MappingRecord, Field, Prefix, Value, Datatypes) ->
+    case cuttlefish_datatypes:datatype_for_value(Value, Datatypes) of
+        {ok, Datatype} ->
             Comments = generate_comments(MappingRecord),
-            Comments ++ [lists:flatten([ Field, " = ", cuttlefish_datatypes:to_string(Default, Datatype) ]), ""]
+            Comments ++ [lists:flatten([ Prefix, " = ",
+                                         cuttlefish_datatypes:to_string(Value, Datatype) ]), ""];
+        error ->
+            _ = ?LOG_WARNING("~ts has a value that none of its datatypes can render; "
+                             "omitting it from the generated .conf file", [Field]),
+            []
     end.
 
 get_default(MappingRecord) ->
@@ -208,11 +222,10 @@ generate_element(false, _Level, _Default, _Commented) -> no.
 generate_comments(M) ->
     DocString = cuttlefish_mapping:doc(M),
 
-    [DefaultDT|_] = cuttlefish_mapping:datatype(M),
     Default = case cuttlefish_mapping:default(M) of
                   undefined -> [];
                   Other ->
-                      [ "", ?FMT("Default: ~ts", [cuttlefish_datatypes:to_string(Other, DefaultDT)]) ]
+                      default_comment(Other, cuttlefish_mapping:datatype(M))
               end,
 
     Datatypes = ["", "Acceptable values:" |
@@ -221,6 +234,16 @@ generate_comments(M) ->
 
     Doc = DocString ++ Default ++ Datatypes,
     [ "## " ++ D || D <- Doc].
+
+%% As in `render_element/5', the datatype that owns the default is not
+%% necessarily the head of the list.
+default_comment(Default, Datatypes) ->
+    case cuttlefish_datatypes:datatype_for_value(Default, Datatypes) of
+        {ok, Datatype} ->
+            [ "", ?FMT("Default: ~ts", [cuttlefish_datatypes:to_string(Default, Datatype)]) ];
+        error ->
+            []
+    end.
 
 -spec pretty_datatype(cuttlefish_datatypes:datatype() |
                       cuttlefish_datatypes:extended()) -> string().
