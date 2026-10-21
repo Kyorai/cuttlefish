@@ -39,10 +39,20 @@
     "hunter2:x"
 ]).
 
+%% Values with no usable `encrypted:' prefix at all. A prefix that is
+%% present but has nothing after it is a different fault, covered by
+%% ?BLANK_CIPHERTEXTS below.
 -define(MALFORMED_ENCRYPTED_VALUES, [
     "Encrypted:" ++ ?PASSWORD_CIPHERTEXT,
-    "encrypted" ++ ?PASSWORD_CIPHERTEXT,
-    "encrypted:"
+    "encrypted" ++ ?PASSWORD_CIPHERTEXT
+]).
+
+-define(BLANK_CIPHERTEXTS, [
+    "encrypted:",
+    "encrypted: ",
+    "encrypted:   ",
+    "encrypted:\t",
+    "encrypted:\t  "
 ]).
 
 encrypted_string_accepts_ciphertext_test() ->
@@ -72,6 +82,19 @@ encrypted_types_reject_malformed_encrypted_values_test() ->
     [?assertEqual({error, {encrypted_value_expected, Type}},
                   cuttlefish_datatypes:from_string(Value, Type))
      || Type <- [encrypted_string, encrypted_binary], Value <- ?MALFORMED_ENCRYPTED_VALUES].
+
+%% A prefix with nothing usable after it is not a missing prefix. Telling
+%% the operator to add a prefix that is already there sends them looking in
+%% the wrong place, so this fault gets its own error and its own message.
+encrypted_types_report_a_blank_ciphertext_as_blank_test() ->
+    [?assertEqual({error, {encrypted_value_empty, Type}},
+                  cuttlefish_datatypes:from_string(Value, Type))
+     || Type <- [encrypted_string, encrypted_binary], Value <- ?BLANK_CIPHERTEXTS].
+
+blank_ciphertext_message_does_not_ask_for_the_prefix_test() ->
+    Message = ?XLATE({encrypted_value_empty, encrypted_binary}),
+    ?assertEqual("Value is prefixed with \"encrypted:\" but the ciphertext "
+                 "after it is empty", Message).
 
 encrypted_types_reject_non_list_values_test() ->
     [?assertEqual({error, {encrypted_value_expected, Type}},
@@ -143,15 +166,15 @@ encrypted_native_default_is_accepted_test() ->
                      []),
     cuttlefish_unit:assert_config(StringConfig, "a.p", {encrypted, "CIPHERTEXT"}).
 
-%% An empty ciphertext is rejected in the native form too, the same as the
-%% string form `"encrypted:"' is.
-encrypted_native_default_rejects_an_empty_ciphertext_test() ->
-    ?assertEqual({error, {encrypted_value_expected, encrypted_string}},
-                 cuttlefish_datatypes:from_string({encrypted, ""}, encrypted_string)),
-    ?assertEqual({error, {encrypted_value_expected, encrypted_binary}},
-                 cuttlefish_datatypes:from_string({encrypted, <<>>}, encrypted_binary)),
-    ?assertEqual({error, {encrypted_value_expected, encrypted_binary}},
-                 cuttlefish_datatypes:from_string({encrypted, ""}, encrypted_binary)).
+%% A blank ciphertext in the native form is the same fault as in the string
+%% form, and reports the same error.
+encrypted_native_default_rejects_a_blank_ciphertext_test() ->
+    [?assertEqual({error, {encrypted_value_empty, encrypted_string}},
+                  cuttlefish_datatypes:from_string({encrypted, V}, encrypted_string))
+     || V <- ["", "  ", "\t"]],
+    [?assertEqual({error, {encrypted_value_empty, encrypted_binary}},
+                  cuttlefish_datatypes:from_string({encrypted, V}, encrypted_binary))
+     || V <- [<<>>, <<"  ">>, <<"\t">>, "", "  "]].
 
 %% A default has to be rendered by the datatype that accepts it, not by the
 %% head of the datatype list. `encrypted_string' cannot render a bare string,
@@ -288,6 +311,13 @@ encrypted_only_mapping_rejects_plaintext_test() ->
     ?assertNotEqual(nomatch, string:find(Messages, "prefixed with \"encrypted:\"")),
     ?assertEqual(nomatch, string:find(Messages, "Pa55w0rd-rabbitmq")).
 
+%% Whitespace is not a secret. A quoted value preserves it, unlike a bare
+%% one, so without a trim the application receives `{encrypted, <<"   ">>}'
+%% as though it were valid ciphertext.
+whitespace_only_ciphertext_is_rejected_through_the_pipeline_test() ->
+    ?assertMatch({error, transform_datatypes, _},
+                 generate(["auth_ldap.dn_lookup_bind.password = 'encrypted:   '"])).
+
 %% Every datatype in a mapping's list contributes an error when the value is
 %% rejected, so redacting only the encrypted error is not enough: the sibling
 %% `{uri, _}' reports the value it rejected. Nothing about a setting that may
@@ -393,6 +423,10 @@ working_validators_are_unaffected_test() ->
       cuttlefish_unit:generate_config(strings, [Schema], [{["p"], ""}]),
       "p invalid, must be non-empty").
 
+%% Both types, because a guard covering only one would silently document
+%% every mapping of the other as the bare word "text".
 pretty_datatype_test() ->
     ?assertEqual("an encrypted value, e.g. encrypted:<ciphertext>",
-                 cuttlefish_conf:pretty_datatype(encrypted_binary)).
+                 cuttlefish_conf:pretty_datatype(encrypted_binary)),
+    ?assertEqual("an encrypted value, e.g. encrypted:<ciphertext>",
+                 cuttlefish_conf:pretty_datatype(encrypted_string)).
