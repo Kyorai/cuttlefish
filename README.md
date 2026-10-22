@@ -1,7 +1,7 @@
 # Cuttlefish
 
 [![GitHub Actions Status](https://github.com/Kyorai/cuttlefish/workflows/CI/badge.svg)](https://github.com/Kyorai/cuttlefish/actions)
-[![Coverage Status](https://coveralls.io/repos/github/Kyorai/cuttlefish/badge.svg?branch=master)](https://coveralls.io/github/Kyorai/cuttlefish)
+[![Coverage Status](https://coveralls.io/repos/github/Kyorai/cuttlefish/badge.svg?branch=main)](https://coveralls.io/github/Kyorai/cuttlefish)
 [![Hex version](https://img.shields.io/hexpm/v/cuttlefish.svg "Hex version")](https://hex.pm/packages/cuttlefish)
 
 Cuttlefish is a library for Erlang applications that wish to walk the
@@ -59,7 +59,7 @@ to start your application. Using the schema alone will generate all
 the proper defaults. Your users can make changes to the `.conf` file
 and those changes will overwrite the schema's defaults.
 
-You an also have an `advanced.config` which looks like the old
+You can also have an `advanced.config` which looks like the old
 `app.config` for anything that no schema mapping is created for.
 
 What does this look like for an application like Riak?
