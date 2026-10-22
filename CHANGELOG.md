@@ -1,5 +1,27 @@
 # Changelog
 
+## [v3.10.0](https://github.com/Kyorai/cuttlefish/tree/v3.10.0) (2026-10-21)
+
+[Full Changelog](https://github.com/Kyorai/cuttlefish/compare/v3.9.1...v3.10.0)
+
+**Enhancements:**
+
+ - Two new datatypes, `encrypted_string` and `encrypted_binary`, for values of the `encrypted:<ciphertext>` form. They are specializations of the tagged types that only recognise the literal `encrypted:` prefix, so a value such as `https://ca.example.com/certs` is not read as a tagged value with the tag `https` [\#85](https://github.com/Kyorai/cuttlefish/pull/85)
+ - An encrypted datatype can be combined with a plaintext one, e.g. `[encrypted_binary, binary]`. The value then reaches the application as `{encrypted, _}` or as the bare value of the other datatype, so translations and validators have to handle both shapes. A schema that lists the encrypted datatype second is rejected at load time, since the plaintext datatype would consume the ciphertext [\#85](https://github.com/Kyorai/cuttlefish/pull/85)
+ - A value rejected for a mapping that declares an encrypted datatype is no longer printed. The error names the setting only, because the setting may hold a secret. Mappings without an encrypted datatype keep their specific error messages [\#85](https://github.com/Kyorai/cuttlefish/pull/85)
+ - A blank ciphertext (`encrypted:` followed by nothing or by whitespace) is rejected with its own error message [\#85](https://github.com/Kyorai/cuttlefish/pull/85)
+ - `cuttlefish_datatypes:is_sensitive/1` tells whether a datatype may hold a secret [\#85](https://github.com/Kyorai/cuttlefish/pull/85)
+
+**Fixed bugs:**
+
+ - A validator that raised an exception took the escript down with a raw stack trace, exit code 127 and no `app.config`. It is now reported as a regular error, like an exception in a translation, and for a mapping that may hold a secret the details are left out [\#85](https://github.com/Kyorai/cuttlefish/pull/85)
+ - Validators are no longer called with `undefined` for a setting that is not set. The result was discarded anyway but a validator that expected a concrete value could fail [\#85](https://github.com/Kyorai/cuttlefish/pull/85)
+ - Generated values are now rendered using the datatype that accepted them [\#85](https://github.com/Kyorai/cuttlefish/pull/85)
+
+**Merged pull requests:**
+
+- New data types: two more specialized types for encrypted values [\#85](https://github.com/Kyorai/cuttlefish/pull/85) ([michaelklishin](https://github.com/michaelklishin))
+
 ## [v3.9.1](https://github.com/Kyorai/cuttlefish/tree/v3.9.1) (2026-05-29)
 
 [Full Changelog](https://github.com/Kyorai/cuttlefish/compare/v3.9.0...v3.9.1)
