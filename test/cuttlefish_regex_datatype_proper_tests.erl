@@ -18,7 +18,7 @@ prop_safe_patterns_accepted() ->
         end).
 
 prop_output_equals_input() ->
-    ?FORALL(Pat, gen_safe_pattern(),
+    ?FORALL(Pat, gen_any_pattern(),
         case cuttlefish_datatypes:from_string(Pat, regex) of
             S when is_list(S) -> S =:= Pat;
             _                 -> true
@@ -37,24 +37,42 @@ prop_nested_quantifier_rejected() ->
         end).
 
 prop_idempotent_on_success() ->
-    ?FORALL(Pat, gen_safe_pattern(),
+    ?FORALL(Pat, gen_any_pattern(),
         case cuttlefish_datatypes:from_string(Pat, regex) of
             S when is_list(S) ->
                 S =:= cuttlefish_datatypes:from_string(S, regex);
             _ -> true
         end).
 
+%% At most one quantifier per pattern. Two of them make the engine split a
+%% run ambiguously: `1+1+' has a choice at every position of the
+%% 40-character `"1111..."' probe, and once the anchored form has to fail,
+%% that exceeds `?MATCH_STEP_BUDGET' for real. Such a pattern is not safe,
+%% so a generator that emits one is not generating safe patterns, and
+%% `prop_safe_patterns_accepted/0' fails whenever it happens to.
 gen_safe_pattern() ->
-    ?LET(Parts, non_empty(list(gen_pattern_atom())),
-         maybe_anchor(lists:flatten(Parts))).
+    ?LET({Head, Quantified, Tail},
+         {list(gen_pattern_atom()),
+          oneof(["", gen_quantified_char()]),
+          non_empty(list(gen_pattern_atom()))},
+         maybe_anchor(lists:flatten([Head, Quantified, Tail]))).
 
 gen_pattern_atom() ->
     oneof([
         gen_literal_char(),
         gen_char_class(),
-        ?LET({C, Q}, {gen_literal_char(), oneof([$?, $+, $*])}, [C, Q]),
         "\\."
     ]).
+
+gen_quantified_char() ->
+    ?LET({C, Q}, {gen_literal_char(), oneof([$?, $+, $*])}, [C, Q]).
+
+%% Unrestricted: any number of quantifiers, so patterns the budget rejects
+%% are generated too. Only for properties that tolerate a rejection.
+gen_any_pattern() ->
+    ?LET(Parts,
+         non_empty(list(oneof([gen_pattern_atom(), gen_quantified_char()]))),
+         maybe_anchor(lists:flatten(Parts))).
 
 gen_literal_char() ->
     oneof("abcdefghijklmnopqrstuvwxyz0123456789").

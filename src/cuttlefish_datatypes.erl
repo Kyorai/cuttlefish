@@ -51,6 +51,8 @@
                     {float,   [numeric_constraint()] | numeric_shortcut()} |
                     float |
                     tagged_string |
+                    encrypted_string |
+                    encrypted_binary |
                     regex |
                     uri |
                     {uri, [atom()]} |
@@ -92,6 +94,8 @@
          is_valid_list/1,
          from_string/2,
          to_string/2,
+         datatype_for_value/2,
+         is_sensitive/1,
          extended_from/1,
          constraint_validator_refs/1,
          resolve_constraint_validators/2
@@ -138,6 +142,8 @@ is_supported({float, Constraints}) ->
 is_supported(float) -> true;
 is_supported(tagged_string) -> true;
 is_supported(tagged_binary) -> true;
+is_supported(encrypted_string) -> true;
+is_supported(encrypted_binary) -> true;
 is_supported(regex) -> true;
 is_supported(uri) -> true;
 is_supported({uri, Schemes}) when is_list(Schemes), Schemes =/= [] ->
@@ -272,6 +278,10 @@ to_string({Tag, String}, tagged_string) when is_list(Tag), is_list(String) -> Ta
 to_string({Tag, String}, tagged_binary) when is_list(Tag), is_list(String) -> Tag ++ ":" ++ String;
 to_string({Tag, Bin}, tagged_binary) when is_list(Tag), is_binary(Bin) -> Tag ++ ":" ++ binary_to_list(Bin);
 
+to_string({encrypted, String}, encrypted_string) when is_list(String) -> "encrypted:" ++ String;
+to_string({encrypted, String}, encrypted_binary) when is_list(String) -> "encrypted:" ++ String;
+to_string({encrypted, Bin}, encrypted_binary) when is_binary(Bin) -> "encrypted:" ++ binary_to_list(Bin);
+
 to_string(Regex, regex) when is_list(Regex) -> Regex;
 
 to_string(URI, uri) when is_list(URI) -> URI;
@@ -309,6 +319,48 @@ to_string(Value, MaybeExtendedDatatype) ->
             {error, {type, {Value, MaybeExtendedDatatype}}}
     end.
 
+%% A prefix with nothing usable after it is a different fault from a value
+%% carrying no prefix at all, so it gets its own error: advising the operator
+%% to add a prefix they have already written sends them to the wrong place.
+%% Whitespace counts as nothing usable. A bare conf value is trimmed by the
+%% parser, but a quoted one is not, so `p = 'encrypted:   '' would otherwise
+%% hand the application three spaces as though they were ciphertext.
+-spec encrypted_value(string() | binary(), datatype()) ->
+    {'encrypted', string() | binary()} | cuttlefish_error:error().
+encrypted_value(Ciphertext, Type) ->
+    case is_blank(Ciphertext) of
+        true  -> {error, {encrypted_value_empty, Type}};
+        false -> {encrypted, Ciphertext}
+    end.
+
+-spec is_blank(string() | binary()) -> boolean().
+is_blank(Ciphertext) when is_binary(Ciphertext) ->
+    string:trim(Ciphertext) =:= <<>>;
+is_blank(Ciphertext) when is_list(Ciphertext) ->
+    string:trim(Ciphertext) =:= "".
+
+%% @doc True for datatypes whose values may be secrets, so that callers
+%% reporting a rejected value know to withhold it. A `{list, _}' of a
+%% sensitive datatype is sensitive too.
+-spec is_sensitive(any()) -> boolean().
+is_sensitive(encrypted_string) -> true;
+is_sensitive(encrypted_binary) -> true;
+is_sensitive({list, Datatype}) -> is_sensitive(Datatype);
+is_sensitive(_) -> false.
+
+%% @doc Returns the first datatype in the list that can render Value as a
+%% string. A mapping declaring several datatypes may hold a value belonging
+%% to any one of them, so callers that need to print a value cannot assume
+%% the head of the list owns it.
+-spec datatype_for_value(term(), datatype_list()) -> {ok, datatype() | extended()} | error.
+datatype_for_value(_Value, []) ->
+    error;
+datatype_for_value(Value, [Datatype|Rest]) ->
+    case to_string(Value, Datatype) of
+        {error, _} -> datatype_for_value(Value, Rest);
+        _String    -> {ok, Datatype}
+    end.
+
 -define(TAGGED_VALUE_PREFIX_REGEX, <<"^[a-zA-Z0-9_]+\:">>).
 
 -define(DEFAULT_URI_SCHEMES, [http, https]).
@@ -337,6 +389,7 @@ from_string("false", boolean) -> false;
 from_string(Value, boolean) when is_list(Value); is_atom(Value) ->
     {error, {conversion, {Value, boolean}}};
 
+from_string(Bin, binary) when is_binary(Bin) -> Bin;
 from_string(String, binary) when is_list(String) -> list_to_binary(String);
 
 from_string(Value, {enum, Enum}) ->
@@ -424,6 +477,26 @@ from_string(String, tagged_binary) when is_list(String) ->
         _ ->
             {error, {conversion, {String, "tagged binary"}}}
     end;
+
+%% Schema defaults enter the conf as raw terms (see
+%% `cuttlefish_generator:add_defaults/2') and are converted along with
+%% everything else, so an already-converted value has to pass through
+%% unchanged, as it does for ip, integer, domain_socket and the rest.
+from_string({encrypted, Value}, encrypted_string) when is_list(Value) ->
+    encrypted_value(Value, encrypted_string);
+from_string({encrypted, Value}, encrypted_binary) when is_binary(Value) ->
+    encrypted_value(Value, encrypted_binary);
+from_string({encrypted, Value}, encrypted_binary) when is_list(Value) ->
+    encrypted_value(list_to_binary(Value), encrypted_binary);
+
+from_string("encrypted:" ++ Value, encrypted_string) ->
+    encrypted_value(Value, encrypted_string);
+from_string("encrypted:" ++ Value, encrypted_binary) ->
+    encrypted_value(list_to_binary(Value), encrypted_binary);
+%% The value is sensitive, keep it out of the "clear" error value.
+from_string(_Value, Type)
+  when Type =:= encrypted_string; Type =:= encrypted_binary ->
+    {error, {encrypted_value_expected, Type}};
 
 from_string({local, UDS, Port}, domain_socket) when is_list(UDS), is_integer(Port) -> {local, UDS, Port};
 from_string(String, domain_socket) when is_list(String) ->

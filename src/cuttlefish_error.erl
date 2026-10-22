@@ -199,6 +199,23 @@ xlate({regex_excessive_backtracking, Value}) ->
     io_lib:format("~tp is prone to excessive backtracking; "
                   "simplify the pattern or avoid nested or overlapping quantifiers",
                   [Value]);
+xlate({encrypted_value_expected, _}) ->
+    "Value must be prefixed with \"encrypted:\"";
+xlate({encrypted_value_empty, _}) ->
+    "Value is prefixed with \"encrypted:\" but the ciphertext after it is empty";
+xlate({validator_unknown_error, {Variable, {Class, Error}}}) ->
+    io_lib:format("Error running validator for ~ts, [~tp, ~tp]",
+                  [Variable, Class, Error]);
+xlate({validator_raised_on_sensitive_value, Variable}) ->
+    ["The validator for ", Variable, " raised an exception; the details are "
+     "not shown because this setting may hold a secret"];
+xlate({encrypted_datatype_not_first, Variable}) ->
+    ["The encrypted datatype for ", Variable, " must come before the other "
+     "datatypes it is combined with, otherwise an \"encrypted:\" value is "
+     "accepted as plaintext by the datatype listed ahead of it"];
+xlate({sensitive_value_rejected, Variable}) ->
+    ["Value for ", Variable, " was rejected by every datatype configured for "
+     "it; the value is not shown because this setting may hold a secret"];
 xlate({uri_empty, _}) ->
     "URI value cannot be empty";
 xlate({uri_malformed, Value}) ->

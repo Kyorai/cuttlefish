@@ -572,14 +572,42 @@ transform_datatypes(Conf, Mappings, ParsedArgs) ->
                         {ok, NewValue} ->
                             {[{Variable, NewValue}|Acc], ErrorAcc};
                         {errorlist, EList} ->
-                            NewError = {transform_type,
-                                        cuttlefish_variable:format(Variable)},
-                            {Acc, [{error, NewError}] ++ EList ++ ErrorAcc}
+                            VarName = cuttlefish_variable:format(Variable),
+                            {Acc, [{error, {transform_type, VarName}}]
+                                  ++ redact_if_sensitive(DTs, VarName, EList)
+                                  ++ ErrorAcc}
                     end
             end
         end,
         {[], []},
         Conf).
+
+%% Each declared datatype contributes its own error, and only the encrypted
+%% ones withhold the value they rejected. One sibling that reports the value
+%% is enough to put a secret in the log, so for a mapping that may hold one
+%% we keep only the errors known to carry no value and replace the rest with
+%% a summary that names none. This fails closed: an error atom not listed in
+%% `value_free_error/1' is elided even if it would have been harmless.
+-spec redact_if_sensitive(cuttlefish_datatypes:datatype_list(),
+                          string(),
+                          [cuttlefish_error:error()]) -> [cuttlefish_error:error()].
+redact_if_sensitive(Datatypes, VarName, Errors) ->
+    case lists:any(fun cuttlefish_datatypes:is_sensitive/1, Datatypes) of
+        false ->
+            Errors;
+        true ->
+            case lists:partition(fun value_free_error/1, Errors) of
+                {Kept, []}      -> Kept;
+                {Kept, _Elided} -> Kept ++ [{error, {sensitive_value_rejected, VarName}}]
+            end
+    end.
+
+%% Errors whose rendered message and term cannot contain the rejected value:
+%% both carry only the datatype, and both messages are constants.
+-spec value_free_error(cuttlefish_error:error()) -> boolean().
+value_free_error({error, {encrypted_value_expected, _}}) -> true;
+value_free_error({error, {encrypted_value_empty, _}}) -> true;
+value_free_error(_) -> false.
 
 -spec value_sub(cuttlefish_conf:conf()) -> {cuttlefish_conf:conf(), [cuttlefish_error:error()]}.
 value_sub(Conf) ->
@@ -744,6 +772,49 @@ find_mapping([H|_]=Variable, Mappings) when is_list(H) ->
 find_mapping(Variable, Mappings) ->
     find_mapping(cuttlefish_variable:tokenize(Variable), Mappings).
 
+%% An unset value is not the validator's business, and the caller already
+%% treats it as valid, so do not hand it over: doing so turns a valid case
+%% into an exception for any validator that assumes a concrete value.
+-spec run_validation(cuttlefish_validator:validator(),
+                     cuttlefish_mapping:mapping(),
+                     term()) -> true | cuttlefish_error:error().
+run_validation(_Validator, _Mapping, undefined) ->
+    true;
+run_validation(V, M, Value) ->
+    VarName = cuttlefish_variable:format(cuttlefish_mapping:variable(M)),
+    Validator = cuttlefish_validator:func(V),
+    %% A validator is user code and can raise. Translations are already
+    %% wrapped, see `try_apply_translation/3'; without the same treatment
+    %% here an exception escapes `map_validate/2' and takes the escript
+    %% down with no cuttlefish error and no app.config.
+    try Validator(Value) of
+        true ->
+            true;
+        _ ->
+            report_validation_error(
+              {validation, {VarName, cuttlefish_validator:description(V)}})
+    catch
+        Class:Reason ->
+            report_validation_error(validator_exception(M, VarName, Class, Reason))
+    end.
+
+%% An exception reason can embed the value that caused it, as `{badmatch,
+%% <<"secret">>}' does, so a mapping that may hold a secret reports that its
+%% validator raised and nothing more.
+-spec validator_exception(cuttlefish_mapping:mapping(), string(), atom(), term()) ->
+    {atom(), term()}.
+validator_exception(M, VarName, Class, Reason) ->
+    case lists:any(fun cuttlefish_datatypes:is_sensitive/1,
+                   cuttlefish_mapping:datatype(M)) of
+        true  -> {validator_raised_on_sensitive_value, VarName};
+        false -> {validator_unknown_error, {VarName, {Class, Reason}}}
+    end.
+
+-spec report_validation_error({atom(), term()}) -> cuttlefish_error:error().
+report_validation_error(Error) ->
+    _ = ?LOG_ERROR(cuttlefish_error:xlate(Error)),
+    {error, Error}.
+
 -spec run_validations(cuttlefish_schema:schema(), cuttlefish_conf:conf())
     -> boolean()|list(cuttlefish_error:error()).
 run_validations({_, Mappings, Validators}, Conf) ->
@@ -755,19 +826,7 @@ run_validations({_, Mappings, Validators}, Conf) ->
         Value = proplists:get_value(cuttlefish_mapping:variable(M), Conf),
         [ begin
             warn_if_deprecated(V, M),
-            Validator = cuttlefish_validator:func(V),
-            case {Value, Validator(Value)} of
-                {undefined, _} -> true;
-                {_, true} ->
-                    true;
-                _ ->
-                    Error = {validation, { cuttlefish_variable:format(
-                                             cuttlefish_mapping:variable(M)),
-                                           cuttlefish_validator:description(V)
-                                         }},
-                    _ = ?LOG_ERROR(cuttlefish_error:xlate(Error)),
-                    {error, Error}
-            end
+            run_validation(V, M, Value)
         end || V <- Vs]
 
      end || M <- Mappings,
